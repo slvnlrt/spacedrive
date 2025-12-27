@@ -3,10 +3,10 @@
 **Module:** `core/src/service/sync/`
 **Protocol:** `spacedrive/sync/1`
 **Date:** 2025-10-28
-**Status:** 🔴 Critical Vulnerabilities Identified
+**Status:** 🔴 **VERIFIED CRITICAL** (Confirmed via Code Audit Dec 2025)
 
 ## Executive Summary
-The synchronization logic uses a hybrid approach: "State-Based" for device-owned data and "Log-Based" (HLC) for shared data. While the HLC implementation provides causal ordering for shared resources, the handling of device-owned data is critically flawed. It lacks origin validation, allowing any paired peer to spoof updates for any other device and overwrite data with arbitrary timestamps.
+The synchronization logic uses a hybrid approach: "State-Based" for device-owned data and "Log-Based" (HLC) for shared data. Deep verification confirmed that the handling of device-owned data is critically flawed. It lacks origin validation, allowing any paired peer to spoof updates for any other device by simply specifying a target `device_id` in the message payload.
 
 ## Findings
 
@@ -15,13 +15,13 @@ The synchronization logic uses a hybrid approach: "State-Based" for device-owned
 **Vulnerability Type:** Missing Authorization / Broken Access Control
 
 #### Description
-The sync protocol accepts `StateChange` messages containing a `device_id` field. The system blindly trusts this field to determine which device's state is being updated. It **does not verify** that the `device_id` in the message matches the `device_id` of the authenticated peer connection.
+The sync protocol accepts `StateChange` messages containing a `device_id` field. Verification confirmed that `SyncProtocolHandler` trusts this field blindly and does not cross-check it against the authenticated `from_device` ID of the peer connection.
 
 #### Vulnerable Code
 *   `core/src/service/network/protocol/sync/handler.rs`:
     ```rust
     SyncMessage::StateChange { device_id, ... } => {
-        // No check that device_id == from_device
+        // VERIFIED: Payload device_id is used directly for DB updates
         peer_sync.on_state_change_received(StateChangeMessage { device_id, ... })
     }
     ```

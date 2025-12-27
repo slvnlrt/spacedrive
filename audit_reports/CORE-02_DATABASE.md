@@ -2,7 +2,7 @@
 
 **Module:** `core/src/infra/db/`
 **Date:** 2025-10-28
-**Status:** 🔴 At-Risk (Missing Encryption), 🟢 Secure (SQLi)
+5: **Status:** 🔴 **VERIFIED AT-RISK** (Confirmed Dec 2025)
 
 ## Executive Summary
 The database layer uses `sea-orm` over SQLite. The audit focused on two critical areas: At-Rest Encryption and SQL Injection vulnerability. While the application follows best practices for query construction (preventing SQLi), it completely lacks encryption for the database file, leaving sensitive metadata exposed if the host file system is compromised.

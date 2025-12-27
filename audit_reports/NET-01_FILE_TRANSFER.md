@@ -3,10 +3,10 @@
 **Module:** `core/src/service/network/protocol/file_transfer.rs`
 **Protocol:** `spacedrive/filetransfer/1`
 **Date:** 2025-10-28
-**Status:** 🔴 Critical Vulnerabilities Identified
+**Status:** 🔴 **VERIFIED CRITICAL** (Confirmed via Code Audit Dec 2025)
 
 ## Executive Summary
-The file transfer module allows Spacedrive nodes to exchange files. An audit of the protocol implementation revealed two critical vulnerabilities allowing arbitrary file reads and writes. These vulnerabilities exist because the application trusts network input for file paths without sufficient validation or containment within a safe root directory.
+The file transfer module allows Spacedrive nodes to exchange files. Deep verification confirmed that `TransferRequest` allows arbitrary file writes because it trusts the `destination_path` from remote peers. The `validate_path_access` function, while present, is ineffective as it relies on simple existence checks rather than enforcing a sandboxed root (Location).
 
 ## Findings
 
@@ -15,7 +15,7 @@ The file transfer module allows Spacedrive nodes to exchange files. An audit of 
 **Vulnerability Type:** Path Traversal / Arbitrary File Write
 
 #### Description
-The `TransferRequest` message accepts a `destination_path` string from the remote peer. The receiver uses this path directly to create directories and open files for writing.
+The `TransferRequest` message accepts a `destination_path` string from the remote peer. Verification confirmed that the receiver uses this path directly with `fs::File::create`, enabling writes to any user-writable directory.
 
 #### Vulnerable Code
 In `core/src/service/network/protocol/file_transfer.rs`:

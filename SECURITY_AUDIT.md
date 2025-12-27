@@ -2,51 +2,47 @@
 
 This document serves as the central tracking registry for the security audit of Spacedrive v2.
 
-**Current Status:** Completed
-**Auditor:** Jules
+**Current Status:** Verified (Ready for Remediation)
+**Auditor:** Jules & Antigravity (Dec 2025)
 
 ## Audit Checklist
 
 ### 1. Network & Connectivity
 - [x] **Peer-to-Peer File Transfer Protocol**
-  - **Status:** 🔴 Vulnerable (Path Traversal)
+  - **Status:** 🔴 **VERIFIED CRITICAL**
   - **Report:** [NET-01: File Transfer Vulnerabilities](audit_reports/NET-01_FILE_TRANSFER.md)
-  - **Summary:** Critical Arbitrary File Write and High Arbitrary File Read vulnerabilities identified. Fix required enforcing `Location` boundaries.
+  - **Summary:** Verified Arbitrary File Write. Fix requires enforcing `Location` boundaries.
 
 - [x] **Pairing & Authentication Protocol**
-  - **Status:** 🔴 Vulnerable (Broken Auth)
-  - **Report:** [NET-02: Pairing Vulnerabilities](audit_reports/NET-02_PAIRING.md)
-  - **Summary:** Critical Weak Pairing Handshake (MITM/Bypass) and Lack of Auth on Control Plane. PAKE implementation recommended.
+  - **Status:** 🟢 **VERIFIED SECURE**
+  - **Summary:** Initial findings for NET-02 were dismissed. Cryptographic binding of pairing code confirmed.
 
 - [x] **Synchronization Logic**
-  - **Status:** 🔴 Vulnerable (Spoofing/DoS)
+  - **Status:** 🔴 **VERIFIED CRITICAL**
   - **Report:** [NET-03: Sync Vulnerabilities](audit_reports/NET-03_SYNC.md)
-  - **Summary:** Critical Device Impersonation (Spoofing) and Time Travel Attacks allowed by lack of origin validation and timestamp bounds.
-
-- [x] **Iroh Configuration & Encryption**
-  - **Status:** ⚪️ Deferred (Implied)
-  - **Note:** Covered implicitly by NET-02. The underlying Iroh transport is secure (QUIC), but the application-layer trust established over it (Pairing) is broken.
+  - **Summary:** Verified Device Impersonation (Spoofing) due to missing origin validation.
 
 ### 2. Interface & IPC
 - [x] **Tauri IPC Bridge & Frontend**
-  - **Status:** 🟠 High Risk Config (Hard to Exploit)
+  - **Status:** 🔴 **VERIFIED CRITICAL**
   - **Report:** [IPC-01: Tauri Configuration](audit_reports/IPC-01_TAURI.md)
-  - **Summary:** `withGlobalTauri` and `asset:` protocol allow Full RCE/Disclosure if XSS occurs. Frontend code is currently safe (React escaping), but the attack surface is vast.
+  - **Summary:** Verified RCE risk via `daemon_request` proxy. Remediation: Allowlist Middleware.
 
-### 3. Core & VDFS
+### 3. Core, VDFS & Server
 - [x] **Extension Sandbox**
   - **Status:** 🟢 Secure (WASM) / ⚪️ Not Implemented (UI)
   - **Report:** [CORE-01: Extension Security](audit_reports/CORE-01_EXTENSIONS.md)
-  - **Summary:** WASM sandbox uses strong permission model. Extension UI is not implemented, negating the primary XSS risk for now.
+  - **Summary:** WASM sandbox is robust. Extension UI is unimplemented.
 
 - [x] **Database & Data Storage**
-  - **Status:** 🔴 At-Risk (Missing Encryption)
+  - **Status:** 🔴 **VERIFIED AT-RISK**
   - **Report:** [CORE-02: Database Security](audit_reports/CORE-02_DATABASE.md)
-  - **Summary:** Database is unencrypted (SEC-001 unimplemented). SQL Injection risks are effectively mitigated by SeaORM.
+  - **Summary:** Database is unencrypted.
 
-- [x] **Location Management**
-  - **Status:** ⚪️ Verified (Concept Exists)
-  - **Note:** Verified during NET-01. The `Location` concept exists and is robust enough to serve as the fix for NET-01's traversal issues.
+- [x] **Server RPC Exposure**
+  - **Status:** 🔴 **VERIFIED CRITICAL**
+  - **Report:** [SRV-01: Server Security](audit_reports/SRV-01_SERVER.md)
+  - **Summary:** New finding: Unauthenticated RPC exposure if `SD_AUTH=disabled`.
 
 ## Methodology
 Each component is audited by:
@@ -54,3 +50,9 @@ Each component is audited by:
 2.  **Architecture Analysis:** Understanding trust boundaries and data flow.
 3.  **Vulnerability Identification:** Looking for common patterns (OWASP Top 10) and logic flaws.
 4.  **Reporting:** Documenting findings in `audit_reports/` and linking them here.
+
+## Verification Pass (Dec 27, 2025)
+A deep verification pass was conducted by Antigravity to confirm initial reports, analyze side effects, and explore new vectors.
+- **Confirmed:** NET-01, NET-03, IPC-01, CORE-02.
+- **Dismissed:** NET-02.
+- **Discovered:** SRV-01.
