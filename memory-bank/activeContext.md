@@ -1,21 +1,25 @@
 # Active Context
 
 ## Current Focus
-Security Audit Verification Complete.
-We have verified all reported vulnerabilities and documented the findings.
+
+Remediation of Critical Vulnerabilities.
+We are currently fixing the security issues identified during the audit.
 
 ## Recent Changes
--   Forked project for security audit.
--   Initial LLM audit completed (`AUDIT_BRIEFING.md`).
-- **Audit Status:** Verified & Finalized.
-- **Official Reports:** Synchronized in `audit_reports/` and `SECURITY_AUDIT.md`.
-- **Critical Findings & Strategies:**
-    - **IPC-01 (Tauri):** Verified RCE risk. **STRATEGY:** Allowlist Middleware.
-    - **NET-01 (Files):** Verified Traversal risk. **STRATEGY:** Location restriction.
-    - **NET-03 (Sync):** Verified Spoofing risk. **STRATEGY:** Origin check.
-    - **SRV-01 (Server):** Verified Unauth RPC. **STRATEGY:** Enforce auth.
-- **Next Step:** Start Remediation.
--   Await instructions for remediation/fixes.
+
+- **NET-01 (Arbitrary File Write):** REMEDIATED.
+  - Implemented dynamic path validation against registered Locations.
+  - Added security regression tests (4 passed).
+- **Development Workflow:** Discovered and documented Windows environment requirements (MSVC + LLVM paths).
+- **Memory Bank:** Created `tasks.md` with Windows-specific build and test commands.
+
+## Next Steps
+
+- Remediate **NET-03** (Sync Impersonation).
+- Remediate **IPC-01** (Tauri RCE).
+- Remediate **SRV-01** (Unauthenticated RPC).
 
 ## Active Decisions
--   No code fixes will be applied during this phase; strictly audit verification.
+
+- Using `CoreContext` for dynamic security validation in networking protocols.
+- Enforcing strict path canonicalization for all file operations.

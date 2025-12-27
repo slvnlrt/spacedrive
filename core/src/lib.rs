@@ -614,7 +614,7 @@ async fn register_default_protocol_handlers(
 			networking.device_registry(),
 			logger.clone(),
 			command_sender,
-			data_dir,
+			data_dir.clone(),
 			networking.endpoint().cloned(),
 			networking.active_connections(),
 		),
@@ -652,6 +652,19 @@ async fn register_default_protocol_handlers(
 
 	// Inject device registry into file transfer handler for encryption
 	file_transfer_handler.set_device_registry(networking.device_registry());
+
+	// SECURITY (NET-01): Inject context for dynamic location-based path validation.
+	// The handler will query all libraries for registered locations at runtime.
+	// This ensures file transfers can only target directories that are managed by Spacedrive.
+	file_transfer_handler.set_context(context.clone());
+	
+	// Also add a fallback transfers directory for incoming files without a specific location
+	let transfers_dir = data_dir.join("transfers");
+	if let Err(e) = std::fs::create_dir_all(&transfers_dir) {
+		tracing::warn!("Failed to create transfers directory: {}", e);
+	}
+	file_transfer_handler.set_allowed_paths(vec![transfers_dir.clone()]);
+	tracing::info!("File transfer handler configured with dynamic location validation + fallback: {:?}", transfers_dir);
 
 	// Get device ID for job activity handler
 	let device_id = context
