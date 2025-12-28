@@ -156,3 +156,48 @@ All P2P protocols implement `ProtocolHandler` trait:
 | -------------------------------------- | ------------------------------------------ |
 | `FILE_OPENING_IMPLEMENTATION_NOTES.md` | Cross-platform file opening implementation |
 | `TABS-IMPLEMENTATION.md`               | Tab system implementation notes            |
+
+---
+
+## Whitepaper Insights (v2 Architecture)
+
+_Source: `whitepaper/spacedrive.pdf`_
+
+### Core Concepts
+
+| Concept              | Description                                                                      |
+| -------------------- | -------------------------------------------------------------------------------- |
+| **VDFS**             | Virtual Distributed File System - unified virtual layer over all storage sources |
+| **Entry Model**      | Every file/folder = Entry with UUID, persistent across renames/moves             |
+| **SdPath**           | URI scheme `sd://...` with 3 modes: Physical, Cloud, Content-Aware               |
+| **Closure Tables**   | Hierarchical indexing with O(1) lookups for millions of entries                  |
+| **Virtual Sidecars** | Derivative data (thumbnails, OCR) stored in `.sdlibrary`, linked by Entry ID     |
+
+### Security Model
+
+| Aspect                    | Implementation                                                         |
+| ------------------------- | ---------------------------------------------------------------------- |
+| **Cryptographic Pairing** | Ed25519 signatures + BIP39 mnemonic codes                              |
+| **E2E Encryption**        | P2P with end-to-end encryption (QUIC/TLS 1.3)                          |
+| **WASM Sandbox**          | Extensions with granular permissions (e.g., read-only per folder)      |
+| **Two-Tier Hashing**      | BLAKE3 sampling (fast ID) + full hash (integrity)                      |
+| **Spacedrop**             | ECDH key exchange for perfect forward secrecy between unpaired devices |
+
+### Sync Protocol (Relevant for NET-03)
+
+- **Leaderless Hybrid Model** - no distributed consensus (Raft/Paxos)
+- **Device-Authoritative Data** - each device has sole authority over its local index
+- **Shared Metadata** - HLC (Hybrid Logical Clock) ordered logs for deterministic merge
+- **Libraries = Trust Boundaries** - Locations can be scoped to specific devices
+
+### Networking Stack
+
+- **Iroh** - Single QUIC endpoint per device
+- **Protocol Multiplexing** - sync, transfer, pairing on same connection
+- **Spacedrop** - ephemeral sharing between unpaired devices with PFS
+
+### Storage Tiering
+
+- **PhysicalClass** - hardware reality (SSD, HDD, Cloud Archive)
+- **LogicalClass** - user intent (Hot, Cold storage)
+- **Transactional Actions** - "preview-then-commit" workflow before any file operation
