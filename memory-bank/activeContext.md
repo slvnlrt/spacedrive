@@ -7,11 +7,14 @@ We are currently fixing the security issues identified during the audit.
 
 ## Recent Changes
 
-- **NET-01 (Arbitrary File Write):** REMEDIATED.
-  - Implemented dynamic path validation against registered Locations.
+- **NET-01 (Arbitrary File Write):** ✅ REMEDIATED.
+  - Implemented dynamic path validation against registered Locations in `FileTransferProtocolHandler`.
+  - Added security regression tests (5 passed).
+- **NET-04 (Arbitrary File Delete):** ✅ REMEDIATED (discovered during NET-01 fix).
+  - Same fix applied to `FileDeleteProtocolHandler`.
   - Added security regression tests (4 passed).
-- **Development Workflow:** Discovered and documented Windows environment requirements (MSVC + LLVM paths).
-- **Memory Bank:** Created `tasks.md` with Windows-specific build and test commands.
+- **Development Workflow:** Documented Windows environment requirements (MSVC + LLVM paths).
+- **PR Submitted:** Security fix submitted to upstream Spacedrive repository.
 
 ## Next Steps
 

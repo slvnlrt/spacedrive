@@ -20,9 +20,10 @@
 
 ## Confirmed Vulnerabilities
 
-- [x] **NET-01**: Arbitrary File Write (REMEDIATED)
-- [x] **NET-02**: Pairing Bypass (Downgraded to Low)
+- [x] **NET-01**: Arbitrary File Write - ✅ REMEDIATED
+- [x] **NET-04**: Arbitrary File Delete - ✅ REMEDIATED (discovered during NET-01)
+- [x] **NET-02**: Pairing Bypass (Downgraded to Low - Dismissed)
 - [x] **NET-03**: Sync Impersonation (Confirmed Critical)
 - [x] **IPC-01**: Tauri RCE (Confirmed Critical)
-- [x] **CORE-02**: Unencrypted DB (Confirmed Medium) (VERIFIED).
-- [x] **SRV-01**: Unauthenticated RPC (Confirmed Critical).
+- [x] **CORE-02**: Unencrypted DB (Confirmed Medium)
+- [x] **SRV-01**: Unauthenticated RPC (Confirmed Critical)
