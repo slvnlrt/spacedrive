@@ -206,12 +206,12 @@ impl FileDeleteProtocolHandler {
 			let library_manager_guard = ctx.library_manager.blocking_read();
 			if let Some(library_manager) = library_manager_guard.as_ref() {
 				let library_list: Vec<std::sync::Arc<crate::library::Library>> =
-					futures::executor::block_on(library_manager.list());
+					tokio::runtime::Handle::current().block_on(library_manager.list());
 				for library in library_list {
 					let location_manager =
 						crate::location::LocationManager::new((*ctx.events).clone());
-					if let Ok(locations) =
-						futures::executor::block_on(location_manager.list_locations(&library))
+					if let Ok(locations) = tokio::runtime::Handle::current()
+						.block_on(location_manager.list_locations(&library))
 					{
 						for loc in locations {
 							paths.push(loc.path.clone());
