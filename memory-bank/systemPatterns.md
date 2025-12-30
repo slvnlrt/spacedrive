@@ -201,3 +201,64 @@ _Source: `whitepaper/spacedrive.pdf`_
 - **PhysicalClass** - hardware reality (SSD, HDD, Cloud Archive)
 - **LogicalClass** - user intent (Hot, Cold storage)
 - **Transactional Actions** - "preview-then-commit" workflow before any file operation
+
+---
+
+## Lessons Learned (NET-01 Fix - Dec 2025)
+
+### ⚠️ Rust Async/Sync Patterns
+
+**NEVER hold a sync `RwLockReadGuard` across `.await` points.**
+
+```rust
+// ❌ WRONG - Guard held across async call
+let guard = lock.blocking_read();
+some_async_fn().await; // Future becomes !Send
+
+// ✅ CORRECT - Clone data, drop guard before await
+let data = {
+    let guard = lock.read().await;
+    guard.clone()
+}; // Guard dropped here
+some_async_fn(data).await;
+```
+
+**Why it matters:**
+
+- Sync guards are not `Send`
+- Async futures must be `Send` to work across threads
+- Compiler error: `future cannot be sent between threads safely`
+
+**Fix patterns:**
+
+1. Make the method fully async with `.read().await`
+2. Clone data and drop guard before any async call
+3. Restructure to avoid holding locks during async operations
+
+### ⚠️ Testing Requirements
+
+**ALWAYS run full compilation and tests before submitting:**
+
+```powershell
+# Minimum verification before any PR
+cargo check -p sd-core           # Compile check
+cargo test -p sd-core            # All tests
+cargo test -p sd-core --test <integration_test>  # Integration tests
+```
+
+**Why unit tests may pass but integration fails:**
+
+- Unit tests may not exercise all code paths (e.g., `if let Some(ctx) = ...`)
+- Integration tests use real `CoreContext` and reveal async issues
+- The compiler only complains when the problematic code is actually called from async
+
+### ⚠️ Code Review Checklist
+
+Before submitting security fixes:
+
+1. [ ] **Compile check passed** (`cargo check`)
+2. [ ] **All unit tests pass** (`cargo test`)
+3. [ ] **Integration tests pass** (find them with `find . -name "*_test*"`)
+4. [ ] **No sync guards held across await** (grep for `blocking_read`, `write().unwrap()`)
+5. [ ] **All entry points covered** (grep for message handlers, not just one)
+6. [ ] **No `futures::executor::block_on`** in async context
