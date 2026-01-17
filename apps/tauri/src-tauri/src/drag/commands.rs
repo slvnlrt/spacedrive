@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(target_os = "macos")]
 use crate::windows::SpacedriveWindow;
 use tauri::{AppHandle, Manager};
 
@@ -105,9 +106,12 @@ pub async fn begin_drag(
 
 	#[cfg(not(target_os = "macos"))]
 	{
+		let _ = coordinator;
+		let _ = session_id;
 		return Err("Drag and drop is only supported on macOS currently".to_string());
 	}
 
+	#[cfg(target_os = "macos")]
 	Ok(session_id)
 }
 

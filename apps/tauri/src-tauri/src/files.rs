@@ -16,11 +16,11 @@ pub async fn reveal_file(path: String) -> Result<(), String> {
 	})
 }
 
-/// Share files using the native system share sheet (macOS/iOS only)
 #[tauri::command]
-pub async fn share_files(paths: Vec<String>) -> Result<(), String> {
+pub async fn share_files(_paths: Vec<String>) -> Result<(), String> {
 	#[cfg(target_os = "macos")]
 	{
+		let paths = _paths;
 		// Verify all paths exist
 		for path in &paths {
 			let path_buf = PathBuf::from(path);

@@ -60,7 +60,6 @@ fn main() {
 	// Create target-suffixed daemon binary for Tauri bundler
 	// Tauri's externalBin expects binaries with target triple suffix
 	let target_triple = std::env::var("TARGET").expect("TARGET not set");
-	let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
 	let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
 		.or_else(|_| std::env::var("CARGO_MANIFEST_DIR").map(|d| format!("{}/../../..", d)))
 		.expect("Could not find workspace directory");
@@ -71,19 +70,42 @@ fn main() {
 		""
 	};
 
-	let daemon_source = format!("{}/target/{}/sd-daemon{}", workspace_dir, profile, exe_ext);
+	// Tauri's externalBin in tauri.conf.json points to target/release/sd-daemon
+	// But dev builds produce target/debug/sd-daemon
+	// So we need to copy from whichever exists to the release folder
+
+	let debug_source = format!("{}/target/debug/sd-daemon{}", workspace_dir, exe_ext);
+	let release_source = format!("{}/target/release/sd-daemon{}", workspace_dir, exe_ext);
+
+	// Determine which source to use (prefer release, fallback to debug)
+	let daemon_source = if std::path::Path::new(&release_source).exists() {
+		release_source.clone()
+	} else if std::path::Path::new(&debug_source).exists() {
+		debug_source.clone()
+	} else {
+		eprintln!("Warning: Daemon binary not found in debug or release folders");
+		String::new()
+	};
+
+	// Target is always in release folder (where Tauri expects it)
 	let daemon_target = format!(
-		"{}/target/{}/sd-daemon-{}{}",
-		workspace_dir, profile, target_triple, exe_ext
+		"{}/target/release/sd-daemon-{}{}",
+		workspace_dir, target_triple, exe_ext
 	);
 
-	if std::path::Path::new(&daemon_source).exists() {
+	if !daemon_source.is_empty() && std::path::Path::new(&daemon_source).exists() {
+		// Ensure target/release directory exists
+		let release_dir = format!("{}/target/release", workspace_dir);
+		let _ = std::fs::create_dir_all(&release_dir);
+
 		// Remove existing file if it exists
 		let _ = std::fs::remove_file(&daemon_target);
 
 		// Copy the daemon binary with target architecture suffix
 		if let Err(e) = std::fs::copy(&daemon_source, &daemon_target) {
-			eprintln!("Warning: Failed to copy daemon: {}", e);
+			eprintln!("Warning: Failed to copy daemon from {} to {}: {}", daemon_source, daemon_target, e);
+		} else {
+			println!("cargo:warning=Copied daemon binary to {}", daemon_target);
 		}
 	}
 

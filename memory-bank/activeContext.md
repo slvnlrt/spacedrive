@@ -2,24 +2,22 @@
 
 ## Current Focus
 
-Fixing Build Errors after Upstream Merge.
-We have paused security remediation to resolve compilation issues introduced by merging the latest upstream changes into `main`.
+Build Fixes Complete. Ready to resume security remediation or other development work.
 
 ## Recent Changes
 
-- **Context Switch**: User merged upstream changes. `security-fix` branch is now outdated.
-- **New Branch**: Working on `build-fix`.
-- **Pending Issues**:
-  - `core\src\location\manager.rs`: Type annotation error.
-  - `core\src\ops\indexing\phases\processing.rs`: Unstable feature error on Windows.
-  - `core\src\volume\platform\windows.rs`: Borrow checker error (temporary value dropped).
+- **Jan 17, 2026**: Merged upstream changes and resolved all build/runtime blockers.
+- **RPC Compatibility**: Updated Tauri `main.rs` to use the new `DaemonRequest::Query` format instead of legacy JSON-RPC 2.0.
+- **Library Init Fix**: Robust directory validation in `LibraryManager` to prevent crashes when encountering files with `.sdlibrary` extension.
+- **Frontend Cleanup**: Commented out missing `LocationCacheDemo` to fix Vite build and runtime syntax errors.
+- **Warning Suppression**: Cleaned up dozens of compiler warnings (unused imports/variables, unreachable code) for a cleaner DevEx.
 
 ## Next Steps
 
-1. Fix compilation errors on `build-fix`.
-2. Verify finding `cargo run -p xtask -- setup`.
-3. Once built, we will eventually return to security work (NET-03, IPC-01) by pulling `main` into `security-fix` or starting fresh.
+1. **Verify Core Features**: Check if indexing and basic file operations are working as expected after the upgrade.
+2. **Security Remediation**: Resume work on NET-03, IPC-01, and SRV-01 by porting previous logic to the new v2 architecture.
 
 ## Active Decisions
 
-- **Prioritize Build**: Cannot proceed with anything else until the project builds on the user's machine.
+- **Windows inode**: Using `None` on Windows until `windows_by_handle` feature stabilizes.
+- **RPC Format**: Exclusively using the enum-based `DaemonRequest` structure for all internal communication.

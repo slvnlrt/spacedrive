@@ -1,38 +1,38 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import {sounds} from '@sd/assets/sounds';
 import {
-	Shell,
 	FloatingControls,
-	LocationCacheDemo,
+	JobsScreen,
+	PlatformProvider,
+	// LocationCacheDemo,
 	PopoutInspector,
 	QuickPreview,
-	JobsScreen,
-	Settings,
-	PlatformProvider,
-	SpacedriveProvider,
 	ServerProvider,
-} from "@sd/interface";
+	Settings,
+	Shell,
+	SpacedriveProvider
+} from '@sd/interface';
 import {
 	SpacedriveClient,
 	TauriTransport,
-	useSyncPreferencesStore,
-} from "@sd/ts-client";
-import type { Event as CoreEvent } from "@sd/ts-client";
-import { sounds } from "@sd/assets/sounds";
-import { useEffect, useState } from "react";
-import { DragOverlay } from "./routes/DragOverlay";
-import { ContextMenuWindow } from "./routes/ContextMenuWindow";
-import { DragDemo } from "./components/DragDemo";
-import { SpacedropWindow } from "./routes/Spacedrop";
-import { platform } from "./platform";
-import { initializeContextMenuHandler } from "./contextMenu";
-import { initializeKeybindGlobal } from "./keybinds";
+	useSyncPreferencesStore
+} from '@sd/ts-client';
+import type {Event as CoreEvent} from '@sd/ts-client';
+import {invoke} from '@tauri-apps/api/core';
+import {listen} from '@tauri-apps/api/event';
+import {getCurrentWebviewWindow} from '@tauri-apps/api/webviewWindow';
+import {useEffect, useState} from 'react';
+import {DragDemo} from './components/DragDemo';
+import {initializeContextMenuHandler} from './contextMenu';
+import {initializeKeybindGlobal} from './keybinds';
+import {platform} from './platform';
+import {ContextMenuWindow} from './routes/ContextMenuWindow';
+import {DragOverlay} from './routes/DragOverlay';
+import {SpacedropWindow} from './routes/Spacedrop';
 
 function App() {
 	const [client, setClient] = useState<SpacedriveClient | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [route, setRoute] = useState<string>("/");
+	const [route, setRoute] = useState<string>('/');
 
 	useEffect(() => {
 		// React Scan disabled - too heavy for development
@@ -56,42 +56,42 @@ function App() {
 		const label = currentWindow.label;
 
 		// Prevent default browser context menu globally (except in context menu windows)
-		if (!label.startsWith("context-menu")) {
+		if (!label.startsWith('context-menu')) {
 			const preventContextMenu = (e: Event) => {
 				// Default behavior: prevent browser context menu
 				// React's onContextMenu handlers can override this with their own preventDefault
 				e.preventDefault();
 			};
-			document.addEventListener("contextmenu", preventContextMenu, {
-				capture: false,
+			document.addEventListener('contextmenu', preventContextMenu, {
+				capture: false
 			});
 		}
 
 		// Set route based on window label
-		if (label === "floating-controls") {
-			setRoute("/floating-controls");
-		} else if (label.startsWith("drag-overlay")) {
-			setRoute("/drag-overlay");
-		} else if (label.startsWith("context-menu")) {
-			setRoute("/contextmenu");
-		} else if (label.startsWith("drag-demo")) {
-			setRoute("/drag-demo");
-		} else if (label.startsWith("spacedrop")) {
-			setRoute("/spacedrop");
-		} else if (label.startsWith("settings")) {
-			setRoute("/settings");
-		} else if (label.startsWith("inspector")) {
-			setRoute("/inspector");
-		} else if (label.startsWith("quick-preview")) {
-			setRoute("/quick-preview");
-		} else if (label.startsWith("cache-demo")) {
-			setRoute("/cache-demo");
-		} else if (label.startsWith("job-manager")) {
-			setRoute("/job-manager");
+		if (label === 'floating-controls') {
+			setRoute('/floating-controls');
+		} else if (label.startsWith('drag-overlay')) {
+			setRoute('/drag-overlay');
+		} else if (label.startsWith('context-menu')) {
+			setRoute('/contextmenu');
+		} else if (label.startsWith('drag-demo')) {
+			setRoute('/drag-demo');
+		} else if (label.startsWith('spacedrop')) {
+			setRoute('/spacedrop');
+		} else if (label.startsWith('settings')) {
+			setRoute('/settings');
+		} else if (label.startsWith('inspector')) {
+			setRoute('/inspector');
+		} else if (label.startsWith('quick-preview')) {
+			setRoute('/quick-preview');
+			// } else if (label.startsWith("cache-demo")) {
+			// 	setRoute("/cache-demo");
+		} else if (label.startsWith('job-manager')) {
+			setRoute('/job-manager');
 		}
 
 		// Tell Tauri window is ready to be shown
-		invoke("app_ready").catch(console.error);
+		invoke('app_ready').catch(console.error);
 
 		// Play startup sound
 		// sounds.startup();
@@ -129,11 +129,11 @@ function App() {
 			unsubscribePromise = spacedrive.subscribe((event: CoreEvent) => {
 				// Check if this is a LibraryCreated event from sync
 				if (
-					typeof event === "object" &&
-					"LibraryCreated" in event &&
-					(event.LibraryCreated as any).source === "Sync"
+					typeof event === 'object' &&
+					'LibraryCreated' in event &&
+					(event.LibraryCreated as any).source === 'Sync'
 				) {
-					const { id, name } = event.LibraryCreated;
+					const {id, name} = event.LibraryCreated;
 
 					// Check user preference for auto-switching
 					const autoSwitchEnabled =
@@ -141,15 +141,15 @@ function App() {
 
 					if (autoSwitchEnabled) {
 						console.log(
-							`[Auto-Switch] Received synced library "${name}", switching...`,
+							`[Auto-Switch] Received synced library "${name}", switching...`
 						);
 
 						// Switch to the new library via platform (syncs across all windows)
 						if (platform.setCurrentLibraryId) {
 							platform.setCurrentLibraryId(id).catch((err) => {
 								console.error(
-									"[Auto-Switch] Failed to switch library:",
-									err,
+									'[Auto-Switch] Failed to switch library:',
+									err
 								);
 							});
 						} else {
@@ -158,7 +158,7 @@ function App() {
 						}
 					} else {
 						console.log(
-							`[Auto-Switch] Received synced library "${name}", but auto-switch is disabled`,
+							`[Auto-Switch] Received synced library "${name}", but auto-switch is disabled`
 						);
 					}
 				}
@@ -166,7 +166,7 @@ function App() {
 
 			// No global subscription needed - each useNormalizedCache creates its own filtered subscription
 		} catch (err) {
-			console.error("Failed to create client:", err);
+			console.error('Failed to create client:', err);
 			setError(err instanceof Error ? err.message : String(err));
 		}
 
@@ -177,39 +177,39 @@ function App() {
 
 			// Clean up all backend TCP connections to prevent connection leaks
 			// This is especially important during development hot reloads
-			invoke("cleanup_all_connections").catch((err) => {
-				console.warn("Failed to cleanup connections:", err);
+			invoke('cleanup_all_connections').catch((err) => {
+				console.warn('Failed to cleanup connections:', err);
 			});
 		};
 	}, []);
 
 	// Routes that don't need the client
-	if (route === "/floating-controls") {
+	if (route === '/floating-controls') {
 		return <FloatingControls />;
 	}
 
-	if (route === "/drag-overlay") {
+	if (route === '/drag-overlay') {
 		return <DragOverlay />;
 	}
 
-	if (route === "/contextmenu") {
+	if (route === '/contextmenu') {
 		return <ContextMenuWindow />;
 	}
 
-	if (route === "/drag-demo") {
+	if (route === '/drag-demo') {
 		return <DragDemo />;
 	}
 
-	if (route === "/spacedrop") {
+	if (route === '/spacedrop') {
 		return <SpacedropWindow />;
 	}
 
 	if (error) {
-		console.log("Rendering error state");
+		console.log('Rendering error state');
 		return (
 			<div className="flex h-screen items-center justify-center bg-gray-950 text-white">
 				<div className="text-center">
-					<h1 className="text-2xl font-bold mb-4">Error</h1>
+					<h1 className="mb-4 text-2xl font-bold">Error</h1>
 					<p className="text-red-400">{error}</p>
 				</div>
 			</div>
@@ -217,14 +217,14 @@ function App() {
 	}
 
 	if (!client) {
-		console.log("Rendering loading state");
+		console.log('Rendering loading state');
 		return (
 			<div className="flex h-screen items-center justify-center bg-gray-950 text-white">
 				<div className="text-center">
 					<div className="animate-pulse text-xl">
 						Initializing client...
 					</div>
-					<p className="text-gray-400 text-sm mt-2">
+					<p className="mt-2 text-sm text-gray-400">
 						Check console for logs
 					</p>
 				</div>
@@ -232,10 +232,10 @@ function App() {
 		);
 	}
 
-	console.log("Rendering Interface with client");
+	console.log('Rendering Interface with client');
 
 	// Route to different UIs based on window type
-	if (route === "/settings") {
+	if (route === '/settings') {
 		return (
 			<PlatformProvider platform={platform}>
 				<SpacedriveProvider client={client}>
@@ -247,12 +247,12 @@ function App() {
 		);
 	}
 
-	if (route === "/inspector") {
+	if (route === '/inspector') {
 		return (
 			<PlatformProvider platform={platform}>
 				<SpacedriveProvider client={client}>
 					<ServerProvider>
-						<div className="h-screen bg-app overflow-hidden">
+						<div className="bg-app h-screen overflow-hidden">
 							<PopoutInspector />
 						</div>
 					</ServerProvider>
@@ -261,16 +261,16 @@ function App() {
 		);
 	}
 
-	if (route === "/cache-demo") {
-		return <LocationCacheDemo />;
-	}
+	// if (route === "/cache-demo") {
+	// 	return <LocationCacheDemo />;
+	// }
 
-	if (route === "/quick-preview") {
+	if (route === '/quick-preview') {
 		return (
 			<PlatformProvider platform={platform}>
 				<SpacedriveProvider client={client}>
 					<ServerProvider>
-						<div className="h-screen bg-app overflow-hidden">
+						<div className="bg-app h-screen overflow-hidden">
 							<QuickPreview />
 						</div>
 					</ServerProvider>
@@ -279,12 +279,12 @@ function App() {
 		);
 	}
 
-	if (route === "/job-manager") {
+	if (route === '/job-manager') {
 		return (
 			<PlatformProvider platform={platform}>
 				<SpacedriveProvider client={client}>
 					<ServerProvider>
-						<div className="h-screen bg-app overflow-hidden rounded-[10px] border border-transparent frame">
+						<div className="bg-app frame h-screen overflow-hidden rounded-[10px] border border-transparent">
 							<JobsScreen />
 						</div>
 					</ServerProvider>

@@ -485,11 +485,10 @@ async fn validate_and_reset_library_if_needed(
 
 	// Query daemon for list of libraries
 	let request = json!({
-		"jsonrpc": "2.0",
-		"id": 1,
-		"method": "query:libraries.list",
-		"params": {
-			"input": {
+		"Query": {
+			"method": "query:libraries.list",
+			"library_id": null,
+			"payload": {
 				"include_stats": false
 			}
 		}
@@ -534,7 +533,7 @@ async fn validate_and_reset_library_if_needed(
 
 	// Parse response to get library list
 	let libraries: Vec<serde_json::Value> = response
-		.get("result")
+		.get("JsonOk")
 		.and_then(|r| r.as_array())
 		.ok_or_else(|| "Invalid response format from libraries.list query".to_string())?
 		.clone();
@@ -1517,6 +1516,7 @@ async fn open_macos_settings() -> Result<(), String> {
 		return Err("Not supported on this platform".to_string());
 	}
 
+	#[cfg(target_os = "macos")]
 	Ok(())
 }
 

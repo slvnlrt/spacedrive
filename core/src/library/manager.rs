@@ -1851,10 +1851,12 @@ impl LibraryManager {
 
 /// Check if a path is a library directory
 fn is_library_directory(path: &Path) -> bool {
-	path.extension()
-		.and_then(|ext| ext.to_str())
-		.map(|ext| ext == LIBRARY_EXTENSION)
-		.unwrap_or(false)
+	path.is_dir()
+		&& path
+			.extension()
+			.and_then(|ext| ext.to_str())
+			.map(|ext| ext == LIBRARY_EXTENSION)
+			.unwrap_or(false)
 }
 
 /// Sanitize a filename for safe filesystem usage

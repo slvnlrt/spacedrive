@@ -443,9 +443,10 @@ pub async fn close_window(app: AppHandle, label: String) -> Result<(), String> {
 
 /// Apply macOS window styling to current window (called from frontend when ready)
 #[tauri::command]
-pub fn apply_macos_styling(app: AppHandle) -> Result<(), String> {
+pub fn apply_macos_styling(_app: AppHandle) -> Result<(), String> {
 	#[cfg(target_os = "macos")]
 	{
+		let app = _app;
 		let window = app
 			.get_webview_window(
 				&app.webview_windows()
