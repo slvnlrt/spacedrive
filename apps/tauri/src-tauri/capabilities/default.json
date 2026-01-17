@@ -2,7 +2,13 @@
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "default",
 	"description": "Default permissions for Spacedrive",
-	"windows": ["main", "inspector-*", "quick-preview-*", "settings-*", "job-manager"],
+	"windows": [
+		"main",
+		"inspector-*",
+		"quick-preview-*",
+		"settings-*",
+		"job-manager"
+	],
 	"permissions": [
 		"core:default",
 		"core:event:allow-listen",
@@ -18,6 +24,7 @@
 		"shell:allow-open",
 		"fs:allow-home-read-recursive",
 		"clipboard-manager:allow-read-text",
-		"clipboard-manager:allow-write-text"
+		"clipboard-manager:allow-write-text",
+		"core:menu:default"
 	]
 }
