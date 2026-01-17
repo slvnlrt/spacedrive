@@ -1977,6 +1977,7 @@ fn main() {
 			drag::get_drag_session,
 			drag::force_clear_drag_state,
 			files::reveal_file,
+			files::share_files,
 			files::get_sidecar_path,
 			file_opening::get_apps_for_paths,
 			file_opening::open_path_default,
@@ -2072,7 +2073,7 @@ fn main() {
 
 			// Get data directory (use default Spacedrive location)
 			let data_dir =
-				sd_core::config::default_data_dir().expect("Failed to get default data directory");
+				sd_tauri_core::default_data_dir().expect("Failed to get default data directory");
 
 			let socket_addr = "127.0.0.1:6969".to_string();
 

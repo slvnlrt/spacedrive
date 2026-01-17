@@ -110,7 +110,7 @@ https://learn.microsoft.com/windows/package-manager/winget/
 
     # Check connectivity to GitHub
     $ProgressPreference = 'SilentlyContinue'
-    if (-not ((Test-NetConnection -ComputerName 'github.com' -Port 80).TcpTestSucceeded)) {
+    if (-not ((Test-NetConnection -ComputerName 'github.com' -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded)) {
         Exit-WithError "Can't connect to github, check your internet connection and run this script again"
     }
     $ProgressPreference = 'Continue'
@@ -254,6 +254,17 @@ https://learn.microsoft.com/windows/package-manager/winget/
 
 if ($LASTEXITCODE -ne 0) {
     Exit-WithError "Something went wrong, exit code: $LASTEXITCODE"
+}
+
+# Run xtask setup to download native dependencies and configure cargo
+if (-not $env:CI) {
+    Write-Host
+    Write-Host 'Running cargo xtask setup to download native dependencies...' -ForegroundColor Yellow
+    Set-Location $projectRoot
+    cargo xtask setup
+    if ($LASTEXITCODE -ne 0) {
+        Exit-WithError 'Failed to run cargo xtask setup'
+    }
 }
 
 if (-not $env:CI) {
