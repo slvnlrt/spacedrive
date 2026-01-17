@@ -519,9 +519,10 @@ pub async fn run_processing_phase(
 			};
 
 			#[cfg(windows)]
-			let inode = {
-				use std::os::windows::fs::MetadataExt;
-				metadata.file_index()
+			let inode: Option<u64> = {
+				// file_index() requires unstable feature `windows_by_handle` (rust#63010)
+				// Use None until the feature stabilizes
+				None
 			};
 
 			#[cfg(not(any(unix, windows)))]

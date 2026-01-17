@@ -172,7 +172,7 @@ impl LocationManager {
 			accessed_at: Set(None),
 			indexed_at: Set(Some(now)), // Record when location root was created
 			permissions: Set(None),
-			inode: Set(inode.map(|i| i as i64)), // Use extracted inode
+			inode: Set(inode.map(|i: u64| i as i64)), // Use extracted inode
 			parent_id: Set(None), // Location root has no parent
 			volume_id: Set(Some(volume_id)), // Volume is required for all locations
 			..Default::default()
