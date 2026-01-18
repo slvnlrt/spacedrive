@@ -8,6 +8,11 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::task;
 use tracing::{debug, warn};
+use std::sync::Mutex;
+use std::collections::HashMap;
+
+#[cfg(windows)]
+static REFS_CACHE: Mutex<Option<HashMap<PathBuf, bool>>> = Mutex::new(None);
 
 /// ReFS filesystem handler
 pub struct RefsHandler;
@@ -38,134 +43,179 @@ impl RefsHandler {
 		let path = path.to_path_buf();
 
 		task::spawn_blocking(move || {
-			// Use PowerShell to get volume information
-			let script = format!(
-				r#"
-				$volume = Get-Volume -FilePath '{}'
-				$partition = Get-Partition -DriveLetter $volume.DriveLetter
-				$disk = Get-Disk -Number $partition.DiskNumber
+			let disks = sysinfo::Disks::new_with_refreshed_list();
+			let mut best_match: Option<(&sysinfo::Disk, usize)> = None;
 
-				[PSCustomObject]@{{
-					VolumeGuid = $volume.UniqueId
-					FileSystem = $volume.FileSystem
-					DriveLetter = $volume.DriveLetter
-					Label = $volume.FileSystemLabel
-					Size = $volume.Size
-					SizeRemaining = $volume.SizeRemaining
-					DiskNumber = $partition.DiskNumber
-					PartitionNumber = $partition.PartitionNumber
-					MediaType = $disk.MediaType
-				}} | ConvertTo-Json
-				"#,
-				path.display()
-			);
-
-			let output = std::process::Command::new("powershell")
-				.args(["-Command", &script])
-				.output()
-				.map_err(|e| {
-					crate::volume::error::VolumeError::platform(format!(
-						"Failed to run PowerShell: {}",
-						e
-					))
-				})?;
-
-			if !output.status.success() {
-				return Err(crate::volume::error::VolumeError::platform(
-					"PowerShell command failed".to_string(),
-				));
+			// Find the disk with the longest mount point that matches the path prefix
+			for disk in &disks {
+				let mount_point = disk.mount_point();
+				if path.starts_with(mount_point) {
+					let len = mount_point.as_os_str().len();
+					if best_match.map_or(true, |(_, l)| len > l) {
+						best_match = Some((disk, len));
+					}
+				}
 			}
 
-			let output_text = String::from_utf8_lossy(&output.stdout);
-			parse_volume_info(&output_text)
+			if let Some((disk, _)) = best_match {
+				let mount_str = disk.mount_point().to_string_lossy();
+				Ok(RefsVolumeInfo {
+					volume_guid: mount_str.to_string(), // Fallback: use mount point as ID
+					file_system: disk.file_system().to_string_lossy().to_string(),
+					drive_letter: mount_str.chars().next(),
+					label: Some(disk.name().to_string_lossy().to_string()),
+					size_bytes: disk.total_space(),
+					available_bytes: disk.available_space(),
+					disk_number: None,
+					partition_number: None,
+					media_type: Some(if disk.is_removable() {
+						"Removable".to_string()
+					} else {
+						"Fixed".to_string()
+					}),
+					supports_block_cloning: disk.file_system().to_string_lossy() == "ReFS",
+				})
+			} else {
+				Err(crate::volume::error::VolumeError::NotFound(format!(
+					"No volume found for path {}",
+					path.display()
+				)))
+			}
 		})
 		.await
-		.map_err(|e| {
-			crate::volume::error::VolumeError::platform(format!("Task join error: {}", e))
-		})?
+		.map_err(|e| crate::volume::error::VolumeError::platform(format!("Task join error: {}", e)))?
 	}
 
 	/// Check if ReFS block cloning is supported
+	#[cfg(windows)]
 	async fn supports_block_cloning(&self, path: &Path) -> bool {
-		// ReFS supports block cloning starting from Windows Server 2016 / Windows 10
-		// Check if the volume supports the feature
-		let path = path.to_path_buf();
+		use std::mem::size_of;
+		use std::os::windows::ffi::OsStrExt;
+		use std::ptr::{null_mut, null};
+		use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, INVALID_HANDLE_VALUE};
+		use windows_sys::Win32::Storage::FileSystem::{
+			CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE,
+			OPEN_EXISTING,
+		};
+		use windows_sys::Win32::System::Ioctl::{FSCTL_GET_REFS_VOLUME_DATA, REFS_VOLUME_DATA_BUFFER};
+		use windows_sys::Win32::System::IO::DeviceIoControl;
 
-		let result = task::spawn_blocking(move || {
-			let script = format!(
-				r#"
-				try {{
-					$volume = Get-Volume -FilePath '{}'
-					# Check if it's ReFS and supports block cloning
-					if ($volume.FileSystem -eq 'ReFS') {{
-						# Try to get ReFS-specific features
-						$refsVolume = Get-RefsVolume -DriveLetter $volume.DriveLetter -ErrorAction SilentlyContinue
-						if ($refsVolume) {{
-							# ReFS volumes generally support block cloning
-							Write-Output 'true'
-						}} else {{
-							Write-Output 'false'
-						}}
-					}} else {{
-						Write-Output 'false'
-					}}
-				}} catch {{
-					Write-Output 'false'
-				}}
-				"#,
-				path.display()
-			);
+		let path_buf = path.to_path_buf();
 
-			let output = std::process::Command::new("powershell")
-				.args(["-Command", &script])
-				.output();
-
-			match output {
-				Ok(output) if output.status.success() => {
-					let output_text = String::from_utf8_lossy(&output.stdout);
-					output_text.trim() == "true"
+		// Check cache first
+		if let Ok(guard) = REFS_CACHE.lock() {
+			if let Some(cache) = guard.as_ref() {
+				if let Some(&supported) = cache.get(&path_buf) {
+					return supported;
 				}
-				_ => false,
 			}
-		})
-		.await;
+		}
 
-		result.unwrap_or(false)
+		// Run blocking IO operation in a dedicated thread
+		task::spawn_blocking(move || {
+			let wide_path: Vec<u16> = path_buf.as_os_str().encode_wide().chain(Some(0)).collect();
+
+			// Open volume handle
+			// FILE_FLAG_BACKUP_SEMANTICS is required to open a directory handle
+			let handle = unsafe {
+				CreateFileW(
+					wide_path.as_ptr(),
+					GENERIC_READ,
+					FILE_SHARE_READ | FILE_SHARE_WRITE,
+					null(), // lpSecurityAttributes
+					OPEN_EXISTING,
+					FILE_FLAG_BACKUP_SEMANTICS,
+					0, // hTemplateFile (HANDLE is isize, use 0)
+				)
+			};
+
+			if handle == INVALID_HANDLE_VALUE {
+				warn!("Failed to open volume handle for ReFS check: {}", path_buf.display());
+				return false;
+			}
+
+			let mut buffer: REFS_VOLUME_DATA_BUFFER = unsafe { std::mem::zeroed() };
+			let mut bytes_returned = 0u32;
+
+			let result = unsafe {
+				DeviceIoControl(
+					handle,
+					FSCTL_GET_REFS_VOLUME_DATA,
+					null(),
+					0,
+					&mut buffer as *mut _ as *mut _,
+					size_of::<REFS_VOLUME_DATA_BUFFER>() as u32,
+					&mut bytes_returned,
+					null_mut(),
+				)
+			};
+
+			unsafe {
+				CloseHandle(handle);
+			}
+
+			if result == 0 {
+				warn!("FSCTL_GET_REFS_VOLUME_DATA failed for: {}", path_buf.display());
+				return false;
+			}
+
+			// ReFS v2.0+ (Windows Server 2016 / Windows 10 1703) supports block cloning
+			// MajorVersion 2+ guarantees support.
+			let supported = buffer.MajorVersion >= 2;
+			debug!("ReFS version {}.{} on {}: Block cloning supported = {}",
+				buffer.MajorVersion, buffer.MinorVersion, path_buf.display(), supported);
+
+			// Update cache
+			if let Ok(mut guard) = REFS_CACHE.lock() {
+				if guard.is_none() {
+					*guard = Some(HashMap::new());
+				}
+				if let Some(cache) = guard.as_mut() {
+					cache.insert(path_buf.clone(), supported);
+				}
+			}
+
+			supported
+		})
+		.await
+		.unwrap_or(false)
+	}
+
+	#[cfg(not(windows))]
+	async fn supports_block_cloning(&self, _path: &Path) -> bool {
+		false
 	}
 
 	/// Get all ReFS volumes on the system
 	pub async fn get_all_refs_volumes(&self) -> VolumeResult<Vec<RefsVolumeInfo>> {
 		task::spawn_blocking(|| {
-			let script = r#"
-				Get-Volume | Where-Object { $_.FileSystem -eq 'ReFS' } | ForEach-Object {
-					$partition = Get-Partition -DriveLetter $_.DriveLetter -ErrorAction SilentlyContinue
-					$disk = if ($partition) { Get-Disk -Number $partition.DiskNumber -ErrorAction SilentlyContinue } else { $null }
+			let disks = sysinfo::Disks::new_with_refreshed_list();
+			let mut refs_volumes = Vec::new();
 
-					[PSCustomObject]@{
-						VolumeGuid = $_.UniqueId
-						FileSystem = $_.FileSystem
-						DriveLetter = $_.DriveLetter
-						Label = $_.FileSystemLabel
-						Size = $_.Size
-						SizeRemaining = $_.SizeRemaining
-						DiskNumber = if ($partition) { $partition.DiskNumber } else { $null }
-						PartitionNumber = if ($partition) { $partition.PartitionNumber } else { $null }
-						MediaType = if ($disk) { $disk.MediaType } else { $null }
-					}
-				} | ConvertTo-Json
-			"#;
-
-			let output = std::process::Command::new("powershell")
-				.args(["-Command", script])
-				.output()
-				.map_err(|e| crate::volume::error::VolumeError::platform(format!("Failed to run PowerShell: {}", e)))?;
-
-			if !output.status.success() {
-				return Ok(Vec::new()); // Return empty if command fails
+			for disk in &disks {
+				let fs_name = disk.file_system().to_string_lossy();
+				if fs_name == "ReFS" {
+					let mount_point = disk.mount_point().to_string_lossy();
+					refs_volumes.push(RefsVolumeInfo {
+						volume_guid: mount_point.to_string(), // Fallback
+						file_system: fs_name.to_string(),
+						drive_letter: mount_point.chars().next(),
+						label: Some(disk.name().to_string_lossy().to_string()),
+						size_bytes: disk.total_space(),
+						available_bytes: disk.available_space(),
+						disk_number: None,
+						partition_number: None,
+						media_type: Some(if disk.is_removable() {
+							"Removable".to_string()
+						} else {
+							"Fixed".to_string()
+						}),
+						supports_block_cloning: true, // ReFS implies potential support, detail check later
+					});
+				}
 			}
 
-			let output_text = String::from_utf8_lossy(&output.stdout);
-			parse_volume_list(&output_text)
+			Ok(refs_volumes)
 		})
 		.await
 		.map_err(|e| crate::volume::error::VolumeError::platform(format!("Task join error: {}", e)))?
@@ -242,88 +292,6 @@ pub struct RefsVolumeInfo {
 	pub supports_block_cloning: bool,
 }
 
-/// Parse PowerShell volume info JSON output
-fn parse_volume_info(json_output: &str) -> VolumeResult<RefsVolumeInfo> {
-	// Simple JSON parsing - in production, you'd use serde_json
-	let json_output = json_output.trim();
-
-	// Extract values using simple string parsing (replace with proper JSON parsing)
-	let volume_guid = extract_json_string(json_output, "VolumeGuid").unwrap_or_default();
-	let file_system = extract_json_string(json_output, "FileSystem").unwrap_or_default();
-	let drive_letter_str = extract_json_string(json_output, "DriveLetter");
-	let label = extract_json_string(json_output, "Label");
-	let size_bytes = extract_json_number(json_output, "Size").unwrap_or(0);
-	let available_bytes = extract_json_number(json_output, "SizeRemaining").unwrap_or(0);
-	let disk_number = extract_json_number(json_output, "DiskNumber").map(|n| n as u32);
-	let partition_number = extract_json_number(json_output, "PartitionNumber").map(|n| n as u32);
-	let media_type = extract_json_string(json_output, "MediaType");
-
-	let drive_letter = drive_letter_str.and_then(|s| s.chars().next());
-	let supports_block_cloning = file_system == "ReFS"; // ReFS generally supports block cloning
-
-	Ok(RefsVolumeInfo {
-		volume_guid,
-		file_system,
-		drive_letter,
-		label,
-		size_bytes,
-		available_bytes,
-		disk_number,
-		partition_number,
-		media_type,
-		supports_block_cloning,
-	})
-}
-
-/// Parse PowerShell volume list JSON output
-fn parse_volume_list(json_output: &str) -> VolumeResult<Vec<RefsVolumeInfo>> {
-	// Simple parsing - in production, use proper JSON parser
-	let json_output = json_output.trim();
-
-	if json_output.is_empty() || json_output == "null" {
-		return Ok(Vec::new());
-	}
-
-	// For now, assume single volume (extend for array parsing)
-	match parse_volume_info(json_output) {
-		Ok(volume) => Ok(vec![volume]),
-		Err(_) => Ok(Vec::new()),
-	}
-}
-
-/// Extract string value from JSON (simple implementation)
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
-	let pattern = format!("\"{}\":", key);
-	if let Some(start) = json.find(&pattern) {
-		let start = start + pattern.len();
-		if let Some(value_start) = json[start..].find('"') {
-			let value_start = start + value_start + 1;
-			if let Some(value_end) = json[value_start..].find('"') {
-				let value = &json[value_start..value_start + value_end];
-				if value != "null" && !value.is_empty() {
-					return Some(value.to_string());
-				}
-			}
-		}
-	}
-	None
-}
-
-/// Extract number value from JSON (simple implementation)
-fn extract_json_number(json: &str, key: &str) -> Option<u64> {
-	let pattern = format!("\"{}\":", key);
-	if let Some(start) = json.find(&pattern) {
-		let start = start + pattern.len();
-		// Skip whitespace
-		let remaining = json[start..].trim_start();
-		if let Some(end) = remaining.find(|c: char| !c.is_ascii_digit()) {
-			let number_str = &remaining[..end];
-			return number_str.parse().ok();
-		}
-	}
-	None
-}
-
 /// Enhance volume with ReFS-specific information from Windows
 pub async fn enhance_volume_from_windows(volume: &mut Volume) -> VolumeResult<()> {
 	// Import the trait from the parent module so the enhance_volume method is available
@@ -338,25 +306,29 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_extract_json_string() {
-		let json =
-			r#"{"VolumeGuid": "12345678-1234-1234-1234-123456789abc", "FileSystem": "ReFS"}"#;
-		assert_eq!(
-			extract_json_string(json, "VolumeGuid"),
-			Some("12345678-1234-1234-1234-123456789abc".to_string())
-		);
-		assert_eq!(
-			extract_json_string(json, "FileSystem"),
-			Some("ReFS".to_string())
-		);
-		assert_eq!(extract_json_string(json, "NonExistent"), None);
+	fn test_refs_volume_info_creation() {
+		let info = RefsVolumeInfo {
+			volume_guid: "E:\\".to_string(),
+			file_system: "ReFS".to_string(),
+			drive_letter: Some('E'),
+			label: Some("DevDrive".to_string()),
+			size_bytes: 100_000_000_000,
+			available_bytes: 50_000_000_000,
+			disk_number: None,
+			partition_number: None,
+			media_type: Some("Fixed".to_string()),
+			supports_block_cloning: true,
+		};
+
+		assert_eq!(info.file_system, "ReFS");
+		assert!(info.supports_block_cloning);
+		assert_eq!(info.drive_letter, Some('E'));
 	}
 
 	#[test]
-	fn test_extract_json_number() {
-		let json = r#"{"Size": 1000000000, "SizeRemaining": 500000000}"#;
-		assert_eq!(extract_json_number(json, "Size"), Some(1000000000));
-		assert_eq!(extract_json_number(json, "SizeRemaining"), Some(500000000));
-		assert_eq!(extract_json_number(json, "NonExistent"), None);
+	fn test_refs_handler_creation() {
+		let handler = RefsHandler::new();
+		// Handler should be created without panicking
+		let _ = handler;
 	}
 }
