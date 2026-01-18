@@ -127,7 +127,7 @@ impl JobHandler for DeleteJob {
 		let failed_count = results.len() - deleted_count;
 		let total_bytes: u64 = results.iter().map(|r| r.bytes_freed).sum();
 
-		let failed_deletions = results
+		let failed_deletions: Vec<DeleteError> = results
 			.into_iter()
 			.filter(|r| !r.success)
 			.map(|r| DeleteError {
@@ -139,6 +139,16 @@ impl JobHandler for DeleteJob {
 				error: r.error.unwrap_or_default(),
 			})
 			.collect();
+
+
+		if !failed_deletions.is_empty() {
+			for failure in failed_deletions.iter().take(5) {
+				ctx.log(format!("Failed to delete {}: {}", failure.path.display(), failure.error));
+			}
+			if failed_deletions.len() > 5 {
+				ctx.log(format!("...and {} more errors", failed_deletions.len() - 5));
+			}
+		}
 
 		ctx.log(format!(
 			"Delete operation completed: {} deleted, {} failed",

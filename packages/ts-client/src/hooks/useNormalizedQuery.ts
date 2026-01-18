@@ -22,14 +22,14 @@
  * ```
  */
 
-import { useEffect, useMemo, useState, useRef } from "react";
-import { useQuery, useQueryClient, QueryClient } from "@tanstack/react-query";
-import { useSpacedriveClient } from "./useClient";
-import type { Event } from "../generated/types";
-import type { SdPath } from "../types";
-import invariant from "tiny-invariant";
-import * as v from "valibot";
-import type { Simplify } from "type-fest";
+import {QueryClient, useQuery, useQueryClient} from '@tanstack/react-query';
+import {useEffect, useMemo, useRef, useState} from 'react';
+import invariant from 'tiny-invariant';
+import type {Simplify} from 'type-fest';
+import * as v from 'valibot';
+import type {Event} from '../generated/types';
+import type {SdPath} from '../types';
+import {useSpacedriveClient} from './useClient';
 
 // Types
 
@@ -64,10 +64,10 @@ const ResourceChangedSchema = v.object({
 			v.object({
 				no_merge_fields: v.optional(v.array(v.string())),
 				affected_paths: v.optional(v.array(v.any())),
-				alternate_ids: v.optional(v.array(v.any())),
-			}),
-		),
-	}),
+				alternate_ids: v.optional(v.array(v.any()))
+			})
+		)
+	})
 });
 
 const ResourceChangedBatchSchema = v.object({
@@ -78,17 +78,17 @@ const ResourceChangedBatchSchema = v.object({
 			v.object({
 				no_merge_fields: v.optional(v.array(v.string())),
 				affected_paths: v.optional(v.array(v.any())),
-				alternate_ids: v.optional(v.array(v.any())),
-			}),
-		),
-	}),
+				alternate_ids: v.optional(v.array(v.any()))
+			})
+		)
+	})
 });
 
 const ResourceDeletedSchema = v.object({
 	ResourceDeleted: v.object({
 		resource_type: v.string(),
-		resource_id: v.string(),
-	}),
+		resource_id: v.string()
+	})
 });
 
 // Main Hook
@@ -97,12 +97,12 @@ const ResourceDeletedSchema = v.object({
  * useNormalizedQuery - Main hook
  */
 export function useNormalizedQuery<I, O = any, TSelected = O>(
-	options: UseNormalizedQueryOptions<I, O, TSelected>,
+	options: UseNormalizedQueryOptions<I, O, TSelected>
 ) {
 	const client = useSpacedriveClient();
 	const queryClient = useQueryClient();
 	const [libraryId, setLibraryId] = useState<string | null>(
-		client.getCurrentLibraryId(),
+		client.getCurrentLibraryId()
 	);
 
 	// Listen for library changes
@@ -111,30 +111,30 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 			setLibraryId(newLibraryId);
 		};
 
-		client.on("library-changed", handleLibraryChange);
+		client.on('library-changed', handleLibraryChange);
 		return () => {
-			client.off("library-changed", handleLibraryChange);
+			client.off('library-changed', handleLibraryChange);
 		};
 	}, [client]);
 
 	// Query key
 	const queryKey = useMemo(
 		() => [options.wireMethod, libraryId, options.input],
-		[options.wireMethod, libraryId, JSON.stringify(options.input)],
+		[options.wireMethod, libraryId, JSON.stringify(options.input)]
 	);
 
 	// Standard TanStack Query
 	const query = useQuery<O, Error, TSelected>({
 		queryKey,
 		queryFn: async () => {
-			invariant(libraryId, "Library ID must be set before querying");
+			invariant(libraryId, 'Library ID must be set before querying');
 			return await client.execute<I, O>(
 				options.wireMethod,
-				options.input,
+				options.input
 			);
 		},
 		enabled: (options.enabled ?? true) && !!libraryId,
-		select: options.select,
+		select: options.select
 	});
 
 	// Refs for stable access to latest values without triggering re-subscription
@@ -151,7 +151,7 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 	// This ensures subscription re-runs when path changes, even if object reference stays same
 	const pathScopeSerialized = useMemo(
 		() => JSON.stringify(options.pathScope),
-		[options.pathScope],
+		[options.pathScope]
 	);
 
 	// Event subscription
@@ -163,7 +163,7 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 		// Skip subscription for file queries without pathScope (prevent overly broad subscriptions)
 		// File resources are too numerous - global subscriptions cause massive event spam
 		// Single-file queries (FileInspector) will use stale-while-revalidate instead
-		if (options.resourceType === "file" && !options.pathScope) {
+		if (options.resourceType === 'file' && !options.pathScope) {
 			return;
 		}
 
@@ -188,7 +188,7 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 				optionsRef.current,
 				capturedQueryKey, // Use captured queryKey, not ref
 				queryClient,
-				optionsRef.current.debug, // Pass debug flag
+				optionsRef.current.debug // Pass debug flag
 			);
 		};
 
@@ -198,9 +198,9 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 					resource_type: options.resourceType,
 					path_scope: options.pathScope,
 					library_id: libraryId,
-					include_descendants: options.includeDescendants ?? false,
+					include_descendants: options.includeDescendants ?? false
 				},
-				handleEvent,
+				handleEvent
 			)
 			.then((unsub) => {
 				if (isCancelled) {
@@ -221,7 +221,7 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 		options.resourceId,
 		pathScopeSerialized, // Use serialized version for deep comparison
 		options.includeDescendants,
-		libraryId,
+		libraryId
 		// options and queryKey accessed via refs - don't need to be in deps
 	]);
 
@@ -241,19 +241,19 @@ export function handleResourceEvent(
 	options: UseNormalizedQueryOptions<any>,
 	queryKey: any[],
 	queryClient: QueryClient,
-	debug?: boolean,
+	debug?: boolean
 ) {
 	// Skip string events (like "CoreStarted", "CoreShutdown")
-	if (typeof event === "string") {
+	if (typeof event === 'string') {
 		return;
 	}
 
 	// Refresh event - invalidate all queries
-	if ("Refresh" in event) {
+	if ('Refresh' in event) {
 		if (debug) {
 			console.log(
 				`[useNormalizedQuery] ${options.wireMethod} processing Refresh`,
-				event,
+				event
 			);
 		}
 		queryClient.invalidateQueries();
@@ -261,19 +261,19 @@ export function handleResourceEvent(
 	}
 
 	// Single resource changed - validate and process
-	if ("ResourceChanged" in event) {
+	if ('ResourceChanged' in event) {
 		const result = v.safeParse(ResourceChangedSchema, event);
 		if (!result.success) {
 			return;
 		}
 
-		const { resource_type, resource, metadata } =
+		const {resource_type, resource, metadata} =
 			result.output.ResourceChanged;
 		if (resource_type === options.resourceType) {
 			if (debug) {
 				console.log(
 					`[useNormalizedQuery] ${options.wireMethod} processing ResourceChanged`,
-					event,
+					event
 				);
 			}
 			updateSingleResource(
@@ -281,19 +281,19 @@ export function handleResourceEvent(
 				metadata,
 				queryKey,
 				queryClient,
-				options,
+				options
 			);
 		}
 	}
 
 	// Batch resource changed - validate and process
-	else if ("ResourceChangedBatch" in event) {
+	else if ('ResourceChangedBatch' in event) {
 		const result = v.safeParse(ResourceChangedBatchSchema, event);
 		if (!result.success) {
 			return;
 		}
 
-		const { resource_type, resources, metadata } =
+		const {resource_type, resources, metadata} =
 			result.output.ResourceChangedBatch;
 
 		if (
@@ -303,7 +303,7 @@ export function handleResourceEvent(
 			if (debug) {
 				console.log(
 					`[useNormalizedQuery] ${options.wireMethod} processing ResourceChangedBatch`,
-					event,
+					event
 				);
 			}
 			updateBatchResources(
@@ -311,24 +311,24 @@ export function handleResourceEvent(
 				metadata,
 				options,
 				queryKey,
-				queryClient,
+				queryClient
 			);
 		}
 	}
 
 	// Resource deleted - validate and process
-	else if ("ResourceDeleted" in event) {
+	else if ('ResourceDeleted' in event) {
 		const result = v.safeParse(ResourceDeletedSchema, event);
 		if (!result.success) {
 			return;
 		}
 
-		const { resource_type, resource_id } = result.output.ResourceDeleted;
+		const {resource_type, resource_id} = result.output.ResourceDeleted;
 		if (resource_type === options.resourceType) {
 			if (debug) {
 				console.log(
 					`[useNormalizedQuery] ${options.wireMethod} processing ResourceDeleted`,
-					event,
+					event
 				);
 			}
 			deleteResource(resource_id, queryKey, queryClient);
@@ -364,7 +364,7 @@ export function handleResourceEvent(
  */
 export function filterBatchResources(
 	resources: any[],
-	options: UseNormalizedQueryOptions<any>,
+	options: UseNormalizedQueryOptions<any>
 ): any[] {
 	let filtered = resources;
 
@@ -376,7 +376,7 @@ export function filterBatchResources(
 	// Filter by pathScope for file resources in exact mode
 	if (
 		options.pathScope &&
-		options.resourceType === "file" &&
+		options.resourceType === 'file' &&
 		!options.includeDescendants
 	) {
 		const beforeCount = filtered.length;
@@ -387,13 +387,15 @@ export function filterBatchResources(
 				return false; // No Physical scope path
 			}
 
-			// Normalize scope: remove trailing slashes for consistent comparison
-			const normalizedScope = String(scopeStr).replace(/\/+$/, "");
+			// Normalize scope: convert all slashes to forward slashes, remove trailing slashes
+			const normalizedScope = String(scopeStr)
+				.replace(/\\/g, '/')
+				.replace(/\/+$/, '');
 
 			// Try to find a Physical path - check alternate_paths first, then sd_path
 			const alternatePaths = resource.alternate_paths || [];
 			const physicalFromAlternate = alternatePaths.find(
-				(p: any) => p.Physical,
+				(p: any) => p.Physical
 			);
 			const physicalFromSdPath = resource.sd_path?.Physical;
 
@@ -404,10 +406,11 @@ export function filterBatchResources(
 				return false; // No physical path found
 			}
 
-			const pathStr = String(physicalPath.path);
+			// Normalize file path: convert all slashes to forward slashes
+			const pathStr = String(physicalPath.path).replace(/\\/g, '/');
 
-			// Extract parent directory from file path
-			const lastSlash = pathStr.lastIndexOf("/");
+			// Extract parent directory from file path (using forward slash after normalization)
+			const lastSlash = pathStr.lastIndexOf('/');
 			if (lastSlash === -1) {
 				return false; // File path has no parent directory
 			}
@@ -434,7 +437,7 @@ export function updateSingleResource<O>(
 	metadata: any,
 	queryKey: any[],
 	queryClient: QueryClient,
-	options?: UseNormalizedQueryOptions<any>,
+	options?: UseNormalizedQueryOptions<any>
 ) {
 	const noMergeFields = metadata?.no_merge_fields || [];
 
@@ -459,16 +462,16 @@ export function updateSingleResource<O>(
 			return updateArrayCache(
 				oldData,
 				resourcesToUpdate,
-				noMergeFields,
+				noMergeFields
 			) as O;
 		}
 
 		// Handle wrapped responses { files: [...] }
-		if (oldData && typeof oldData === "object") {
+		if (oldData && typeof oldData === 'object') {
 			return updateWrappedCache(
 				oldData,
 				resourcesToUpdate,
-				noMergeFields,
+				noMergeFields
 			) as O;
 		}
 
@@ -486,7 +489,7 @@ export function updateBatchResources<O>(
 	metadata: any,
 	options: UseNormalizedQueryOptions<any>,
 	queryKey: any[],
-	queryClient: QueryClient,
+	queryClient: QueryClient
 ) {
 	const noMergeFields = metadata?.no_merge_fields || [];
 
@@ -512,16 +515,16 @@ export function updateBatchResources<O>(
 			return updateArrayCache(
 				oldData,
 				filteredResources,
-				noMergeFields,
+				noMergeFields
 			) as O;
 		}
 
 		// Handle wrapped responses { files: [...] }
-		if (oldData && typeof oldData === "object") {
+		if (oldData && typeof oldData === 'object') {
 			return updateWrappedCache(
 				oldData,
 				filteredResources,
-				noMergeFields,
+				noMergeFields
 			) as O;
 		}
 
@@ -537,7 +540,7 @@ export function updateBatchResources<O>(
 export function deleteResource<O>(
 	resourceId: string,
 	queryKey: any[],
-	queryClient: QueryClient,
+	queryClient: QueryClient
 ) {
 	queryClient.setQueryData<O>(queryKey, (oldData: any) => {
 		if (!oldData) return oldData;
@@ -546,17 +549,17 @@ export function deleteResource<O>(
 			return oldData.filter((item: any) => item.id !== resourceId) as O;
 		}
 
-		if (oldData && typeof oldData === "object") {
+		if (oldData && typeof oldData === 'object') {
 			const arrayField = Object.keys(oldData).find((key) =>
-				Array.isArray((oldData as any)[key]),
+				Array.isArray((oldData as any)[key])
 			);
 
 			if (arrayField) {
 				return {
 					...oldData,
 					[arrayField]: (oldData as any)[arrayField].filter(
-						(item: any) => item.id !== resourceId,
-					),
+						(item: any) => item.id !== resourceId
+					)
 				};
 			}
 		}
@@ -573,7 +576,7 @@ export function deleteResource<O>(
 function updateArrayCache(
 	oldData: any[],
 	newResources: any[],
-	noMergeFields: string[],
+	noMergeFields: string[]
 ): any[] {
 	const newData = [...oldData];
 	const seenIds = new Set();
@@ -595,7 +598,7 @@ function updateArrayCache(
 		if (!seenIds.has(resource.id) && resource.sd_path?.Content) {
 			// Try to find existing Physical entry by matching alternate_paths
 			const physicalPath = resource.alternate_paths?.find(
-				(p: any) => p.Physical,
+				(p: any) => p.Physical
 			)?.Physical?.path;
 			if (physicalPath) {
 				const existingIndex = newData.findIndex((item: any) => {
@@ -611,7 +614,7 @@ function updateArrayCache(
 					newData[existingIndex] = safeMerge(
 						newData[existingIndex],
 						resource,
-						noMergeFields,
+						noMergeFields
 					);
 					seenIds.add(resource.id);
 				}
@@ -649,7 +652,7 @@ function updateArrayCache(
 function updateWrappedCache(
 	oldData: any,
 	newResources: any[],
-	noMergeFields: string[],
+	noMergeFields: string[]
 ): any {
 	// First check: if oldData has an id that matches incoming, merge directly
 	// This handles single object responses like files.by_id
@@ -660,7 +663,7 @@ function updateWrappedCache(
 
 	// Second check: wrapped responses like { files: [...] }
 	const arrayField = Object.keys(oldData).find((key) =>
-		Array.isArray(oldData[key]),
+		Array.isArray(oldData[key])
 	);
 
 	if (arrayField) {
@@ -682,7 +685,7 @@ function updateWrappedCache(
 			if (!seenIds.has(resource.id) && resource.sd_path?.Content) {
 				// Try to find existing Physical entry by matching alternate_paths
 				const physicalPath = resource.alternate_paths?.find(
-					(p: any) => p.Physical,
+					(p: any) => p.Physical
 				)?.Physical?.path;
 				if (physicalPath) {
 					const existingIndex = array.findIndex((item: any) => {
@@ -698,7 +701,7 @@ function updateWrappedCache(
 						array[existingIndex] = safeMerge(
 							array[existingIndex],
 							resource,
-							noMergeFields,
+							noMergeFields
 						);
 						seenIds.add(resource.id);
 					}
@@ -726,7 +729,7 @@ function updateWrappedCache(
 
 				// Check if resource already exists in the array (by ID)
 				const alreadyExists = array.some(
-					(item: any) => item.id === resource.id,
+					(item: any) => item.id === resource.id
 				);
 
 				if (alreadyExists) {
@@ -738,7 +741,7 @@ function updateWrappedCache(
 			}
 		}
 
-		return { ...oldData, [arrayField]: array };
+		return {...oldData, [arrayField]: array};
 	}
 
 	return oldData;
@@ -759,7 +762,7 @@ function updateWrappedCache(
 export function safeMerge(
 	existing: any,
 	incoming: any,
-	noMergeFields: string[] = [],
+	noMergeFields: string[] = []
 ): any {
 	// Handle null/undefined
 	if (incoming === null || incoming === undefined) {
@@ -769,7 +772,7 @@ export function safeMerge(
 	}
 
 	// Shallow merge with incoming winning, but deep merge nested objects
-	const result: any = { ...existing };
+	const result: any = {...existing};
 
 	for (const key of Object.keys(incoming)) {
 		const incomingVal = incoming[key];
@@ -786,9 +789,9 @@ export function safeMerge(
 		// Nested objects: deep merge recursively
 		else if (
 			incomingVal !== null &&
-			typeof incomingVal === "object" &&
+			typeof incomingVal === 'object' &&
 			existingVal !== null &&
-			typeof existingVal === "object" &&
+			typeof existingVal === 'object' &&
 			!Array.isArray(existingVal)
 		) {
 			result[key] = safeMerge(existingVal, incomingVal, noMergeFields);
