@@ -401,8 +401,8 @@ impl JobManager {
 								info!("Emitted JobStarted event for job {}", job_id_clone);
 							}
 							JobStatus::Completed => {
-								// Emit completion event for all jobs
-								if should_persist {
+								// Emit completion event for jobs that should emit events
+								if should_emit_events {
 									// Get the final output from the handle before removing the job
 									let output = {
 										let jobs = running_jobs.read().await;
@@ -492,8 +492,8 @@ impl JobManager {
 								break;
 							}
 							JobStatus::Failed => {
-								// Emit event for all jobs
-								if should_persist {
+								// Emit event for jobs that should emit events
+								if should_emit_events {
 									event_bus.emit(Event::JobFailed {
 										job_id: job_id_clone.to_string(),
 										job_type: job_type_str.to_string(),
@@ -507,8 +507,8 @@ impl JobManager {
 								break;
 							}
 							JobStatus::Cancelled => {
-								// Emit event for all jobs
-								if should_persist {
+								// Emit event for jobs that should emit events
+								if should_emit_events {
 									event_bus.emit(Event::JobCancelled {
 										job_id: job_id_clone.to_string(),
 										job_type: job_type_str.to_string(),
@@ -772,6 +772,7 @@ impl JobManager {
 			job_logging_config,
 			Some(library.job_logs_dir()),
 			Some(persistence_complete_tx),
+			should_persist,
 		);
 
 		// Dispatch to task system
@@ -827,8 +828,8 @@ impl JobManager {
 								info!("Emitted JobStarted event for job {}", job_id_clone);
 							}
 							JobStatus::Completed => {
-								// Emit completion event for all jobs
-								if should_persist {
+								// Emit completion event for jobs that should emit events
+								if should_emit_events {
 									// Get the final output from the handle before removing the job
 									let output = {
 										let jobs = running_jobs.read().await;
@@ -918,8 +919,8 @@ impl JobManager {
 								break;
 							}
 							JobStatus::Failed => {
-								// Emit event for all jobs
-								if should_persist {
+								// Emit event for jobs that should emit events
+								if should_emit_events {
 									event_bus.emit(Event::JobFailed {
 										job_id: job_id_clone.to_string(),
 										job_type: job_type_str.to_string(),
@@ -933,8 +934,8 @@ impl JobManager {
 								break;
 							}
 							JobStatus::Cancelled => {
-								// Emit event for all jobs
-								if should_persist {
+								// Emit event for jobs that should emit events
+								if should_emit_events {
 									event_bus.emit(Event::JobCancelled {
 										job_id: job_id_clone.to_string(),
 										job_type: job_type_str.to_string(),

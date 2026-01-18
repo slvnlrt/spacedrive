@@ -42,6 +42,7 @@ pub struct JobExecutorState {
 	pub job_logs_dir: Option<PathBuf>,
 	pub file_logger: Option<Arc<super::logger::FileJobLogger>>,
 	pub persistence_complete_tx: Option<tokio::sync::oneshot::Sender<()>>,
+	pub should_persist: bool,
 }
 
 impl<J: JobHandler> JobExecutor<J> {
@@ -61,6 +62,7 @@ impl<J: JobHandler> JobExecutor<J> {
 		job_logging_config: Option<JobLoggingConfig>,
 		job_logs_dir: Option<PathBuf>,
 		persistence_complete_tx: Option<tokio::sync::oneshot::Sender<()>>,
+		should_persist: bool,
 	) -> Self {
 		// Create file logger if job logging is enabled
 		let file_logger = if let (Some(config), Some(logs_dir)) =
@@ -111,6 +113,7 @@ impl<J: JobHandler> JobExecutor<J> {
 				job_logs_dir,
 				file_logger,
 				persistence_complete_tx,
+				should_persist,
 			},
 		}
 	}
@@ -214,20 +217,23 @@ impl<J: JobHandler> JobExecutor<J> {
 		let _ = self.state.status_tx.send(super::types::JobStatus::Running);
 
 		// Also persist status to database
-		warn!(
-			"DEBUG: JobExecutor updating database status to Running for job {}",
-			self.state.job_id
-		);
-		if let Err(e) = self
-			.update_job_status_in_db(super::types::JobStatus::Running)
-			.await
-		{
-			error!("Failed to update job status in database: {}", e);
-		} else {
+		// Also persist status to database (if persistent)
+		if self.state.should_persist {
 			warn!(
-				"DEBUG: JobExecutor successfully updated database status to Running for job {}",
+				"DEBUG: JobExecutor updating database status to Running for job {}",
 				self.state.job_id
 			);
+			if let Err(e) = self
+				.update_job_status_in_db(super::types::JobStatus::Running)
+				.await
+			{
+				error!("Failed to update job status in database: {}", e);
+			} else {
+				warn!(
+					"DEBUG: JobExecutor successfully updated database status to Running for job {}",
+					self.state.job_id
+				);
+			}
 		}
 
 		// Create job context
@@ -287,25 +293,27 @@ impl<J: JobHandler> JobExecutor<J> {
 					);
 				}
 
-				// Persist final status and progress to database atomically
-				let final_progress = if let Some(Ok(ref output)) = *self.state.output.lock().await {
-					output.as_progress()
-				} else {
-					Some(Progress::percentage(1.0))
-				};
+				// Persist final status and progress to database atomically (if persistent)
+				if self.state.should_persist {
+					let final_progress = if let Some(Ok(ref output)) = *self.state.output.lock().await {
+						output.as_progress()
+					} else {
+						Some(Progress::percentage(1.0))
+					};
 
-				if let Err(e) = self
-					.state
-					.job_db
-					.update_status_and_progress(
-						self.state.job_id,
-						JobStatus::Completed,
-						final_progress.as_ref(),
-						None,
-					)
-					.await
-				{
-					error!("Failed to update job completion status in database: {}", e);
+					if let Err(e) = self
+						.state
+						.job_db
+						.update_status_and_progress(
+							self.state.job_id,
+							JobStatus::Completed,
+							final_progress.as_ref(),
+							None,
+						)
+						.await
+					{
+						error!("Failed to update job completion status in database: {}", e);
+					}
 				}
 
 				info!(
@@ -325,33 +333,41 @@ impl<J: JobHandler> JobExecutor<J> {
 						// Job was paused, don't update status (already set by pause_job)
 						debug!("Job {} paused", self.state.job_id);
 
-						// Save job state for resume
-						use sea_orm::{ActiveModelTrait, ActiveValue::Set};
-						let job_state = rmp_serde::to_vec(&self.job)
-							.map_err(|e| JobError::serialization(format!("{}", e)))?;
+						// Save job state for resume (if persistent)
+						if self.state.should_persist {
+							use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+							let job_state = match rmp_serde::to_vec(&self.job) {
+								Ok(s) => s,
+								Err(e) => {
+									let err = JobError::serialization(format!("{}", e));
+									error!("Failed to serialize job state: {}", err);
+									return Err(err);
+								}
+							};
 
-						info!(
-							"PAUSE_STATE_SAVE: Job {} serialized {} bytes of state for pause",
-							self.state.job_id,
-							job_state.len()
-						);
+							info!(
+								"PAUSE_STATE_SAVE: Job {} serialized {} bytes of state for pause",
+								self.state.job_id,
+								job_state.len()
+							);
 
-						let mut job_model = super::database::jobs::ActiveModel {
-							id: Set(self.state.job_id.to_string()),
-							state: Set(job_state.clone()),
-							..Default::default()
-						};
+							let mut job_model = super::database::jobs::ActiveModel {
+								id: Set(self.state.job_id.to_string()),
+								state: Set(job_state.clone()),
+								..Default::default()
+							};
 
-						match job_model.update(self.state.job_db.conn()).await {
-							Ok(_) => {
-								info!("PAUSE_STATE_SAVE: Job {} successfully saved {} bytes to database",
-									self.state.job_id, job_state.len());
-							}
-							Err(e) => {
-								error!(
-									"PAUSE_STATE_SAVE: Failed to save paused job state for {}: {}",
-									self.state.job_id, e
-								);
+							match job_model.update(self.state.job_db.conn()).await {
+								Ok(_) => {
+									info!("PAUSE_STATE_SAVE: Job {} successfully saved {} bytes to database",
+										self.state.job_id, job_state.len());
+								}
+								Err(e) => {
+									error!(
+										"PAUSE_STATE_SAVE: Failed to save paused job state for {}: {}",
+										self.state.job_id, e
+									);
+								}
 							}
 						}
 
@@ -369,23 +385,25 @@ impl<J: JobHandler> JobExecutor<J> {
 						// Job was cancelled
 						let _ = self.state.status_tx.send(JobStatus::Cancelled);
 
-						// Persist cancellation status with latest progress
-						let latest_progress = self.state.latest_progress.lock().await.clone();
-						if let Err(e) = self
-							.state
-							.job_db
-							.update_status_and_progress(
-								self.state.job_id,
-								JobStatus::Cancelled,
-								latest_progress.as_ref(),
-								None,
-							)
-							.await
-						{
-							error!(
-								"Failed to update job cancellation status in database: {}",
-								e
-							);
+						// Persist cancellation status with latest progress (if persistent)
+						if self.state.should_persist {
+							let latest_progress = self.state.latest_progress.lock().await.clone();
+							if let Err(e) = self
+								.state
+								.job_db
+								.update_status_and_progress(
+									self.state.job_id,
+									JobStatus::Cancelled,
+									latest_progress.as_ref(),
+									None,
+								)
+								.await
+							{
+								error!(
+									"Failed to update job cancellation status in database: {}",
+									e
+								);
+							}
 						}
 
 						Ok(ExecStatus::Canceled)
@@ -396,20 +414,22 @@ impl<J: JobHandler> JobExecutor<J> {
 					// Update status with current progress
 					let _ = self.state.status_tx.send(JobStatus::Failed);
 
-					// Persist failure status with latest progress and error message
-					let latest_progress = self.state.latest_progress.lock().await.clone();
-					if let Err(e_db) = self
-						.state
-						.job_db
-						.update_status_and_progress(
-							self.state.job_id,
-							JobStatus::Failed,
-							latest_progress.as_ref(),
-							Some(e.to_string()),
-						)
-						.await
-					{
-						error!("Failed to update job failure status in database: {}", e_db);
+					// Persist failure status with latest progress and error message (if persistent)
+					if self.state.should_persist {
+						let latest_progress = self.state.latest_progress.lock().await.clone();
+						if let Err(e_db) = self
+							.state
+							.job_db
+							.update_status_and_progress(
+								self.state.job_id,
+								JobStatus::Failed,
+								latest_progress.as_ref(),
+								Some(e.to_string()),
+							)
+							.await
+						{
+							error!("Failed to update job failure status in database: {}", e_db);
+						}
 					}
 
 					Err(e)
@@ -474,6 +494,8 @@ impl<J: JobHandler + std::fmt::Debug> ErasedJob for JobExecutor<J> {
 	) -> Box<dyn sd_task_system::Task<JobError>> {
 		// Update the executor's state with the new parameters
 		let mut executor = *self;
+		let should_persist = executor.state.should_persist;
+
 		// Create file logger if job logging is enabled
 		let file_logger =
 			if let (Some(config), Some(logs_dir)) = (&job_logging_config, &job_logs_dir) {
@@ -513,6 +535,7 @@ impl<J: JobHandler + std::fmt::Debug> ErasedJob for JobExecutor<J> {
 			job_logs_dir,
 			file_logger,
 			persistence_complete_tx,
+			should_persist,
 		};
 
 		Box::new(executor)

@@ -77,6 +77,7 @@ pub fn derive_job(input: TokenStream) -> TokenStream {
 				job_logs_dir: Option<std::path::PathBuf>,
 				persistence_complete_tx: Option<tokio::sync::oneshot::Sender<()>>,
 			) -> Box<dyn sd_task_system::Task<crate::infra::job::error::JobError>> {
+				let should_persist = <#name as crate::infra::job::traits::DynJob>::should_persist(&*self);
 				Box::new(crate::infra::job::executor::JobExecutor::new(
 					*self,
 					job_id,
@@ -93,6 +94,7 @@ pub fn derive_job(input: TokenStream) -> TokenStream {
 					job_logging_config,
 					job_logs_dir,
 					persistence_complete_tx,
+					should_persist,
 				))
 			}
 
