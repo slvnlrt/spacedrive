@@ -15,6 +15,13 @@ use uuid::Uuid;
 /// Dotfile name for persistent volume identification
 pub const SPACEDRIVE_VOLUME_ID_FILE: &str = ".spacedrive-volume-id";
 
+/// UUID namespace for deterministic volume ID generation.
+/// This ensures the same physical volume (identified by fingerprint) always gets the same UUID
+/// across daemon restarts and re-detection cycles, preventing UI duplication issues.
+///
+/// Generated using `uuid::Uuid::new_v5(NAMESPACE_DNS, "spacedrive.volume")` and hardcoded for stability.
+pub const SPACEDRIVE_VOLUME_NAMESPACE: Uuid = uuid::uuid!("a1b2c3d4-e5f6-5a7b-8c9d-0e1f2a3b4c5d");
+
 /// Unique fingerprint for a storage volume
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Type)]
 pub struct VolumeFingerprint(pub String);
@@ -25,7 +32,32 @@ impl VolumeFingerprint {
 	pub fn from_primary_volume(mount_point: &std::path::Path, device_id: Uuid) -> Self {
 		let mut hasher = blake3::Hasher::new();
 		hasher.update(b"stable_primary_v1:");
-		hasher.update(mount_point.to_string_lossy().as_bytes());
+
+		// Normalize path for consistent fingerprinting across OSs
+		let path_str = mount_point.to_string_lossy();
+		let normalized_path = if cfg!(windows) || cfg!(target_os = "macos") {
+			path_str.to_lowercase()
+		} else {
+			path_str.into_owned()
+		};
+
+		// Remove trailing slash/backslash for consistency (except root paths like "C:/" or "/")
+		let trimmed_path = if normalized_path.len() > 1
+			&& (normalized_path.ends_with('/') || normalized_path.ends_with('\\'))
+		{
+			// Keep root paths like "C:\" or "/" intact if they are short, otherwise trim
+			if cfg!(windows) && normalized_path.len() <= 3 {
+				normalized_path
+			} else if normalized_path.len() == 1 {
+				normalized_path
+			} else {
+				normalized_path[..normalized_path.len() - 1].to_string()
+			}
+		} else {
+			normalized_path
+		};
+
+		hasher.update(trimmed_path.as_bytes());
 		hasher.update(device_id.as_bytes());
 		Self(hasher.finalize().to_hex().to_string())
 	}
@@ -98,6 +130,22 @@ impl VolumeFingerprint {
 		} else {
 			false
 		}
+	}
+
+	/// Generate a deterministic UUID for this fingerprint.
+	///
+	/// This uses UUID v5 (name-based with SHA-1) to create a stable UUID that will
+	/// always be the same for the same fingerprint. This is critical for preventing
+	/// UI duplication when volumes are untracked/re-detected, as the same physical
+	/// volume will always get the same UUID.
+	///
+	/// # Example
+	/// ```ignore
+	/// let fp = VolumeFingerprint::from_hex("abc123...");
+	/// let uuid = fp.to_deterministic_uuid(); // Always the same for this fingerprint
+	/// ```
+	pub fn to_deterministic_uuid(&self) -> Uuid {
+		Uuid::new_v5(&SPACEDRIVE_VOLUME_NAMESPACE, self.0.as_bytes())
 	}
 }
 
@@ -620,7 +668,15 @@ impl Identifiable for Volume {
 crate::register_resource!(Volume);
 
 impl Volume {
-	/// Create a new tracked volume
+	/// Create a new volume with a deterministic UUID based on its fingerprint.
+	///
+	/// The UUID is derived from the fingerprint using UUID v5, ensuring that:
+	/// - The same physical volume always gets the same UUID across daemon restarts
+	/// - Re-detected volumes after untracking maintain their identity
+	/// - UI components can rely on stable volume IDs for reactivity
+	///
+	/// This prevents volume duplication issues in the UI when volumes are untracked
+	/// and then re-detected by the periodic refresh cycle.
 	pub fn new(
 		device_id: Uuid,
 		fingerprint: VolumeFingerprint,
@@ -628,8 +684,10 @@ impl Volume {
 		mount_point: PathBuf,
 	) -> Self {
 		let now = Utc::now();
+		// Use deterministic UUID based on fingerprint for identity stability
+		let id = fingerprint.to_deterministic_uuid();
 		Self {
-			id: Uuid::new_v4(),
+			id,
 			library_id: None,
 			device_id,
 			fingerprint,

@@ -195,13 +195,27 @@ impl super::FilesystemHandler for RefsHandler {
 	}
 
 	fn contains_path(&self, volume: &Volume, path: &std::path::Path) -> bool {
+		// Strip Windows extended path prefix if present
+		// This handles canonicalized paths that start with \\?\
+		let normalized_path = if let Some(path_str) = path.to_str() {
+			if path_str.starts_with("\\\\?\\UNC\\") {
+				PathBuf::from(format!("\\\\{}", &path_str[8..]))
+			} else if let Some(stripped) = path_str.strip_prefix("\\\\?\\") {
+				PathBuf::from(stripped)
+			} else {
+				path.to_path_buf()
+			}
+		} else {
+			path.to_path_buf()
+		};
+
 		// Check primary mount point
-		if path.starts_with(&volume.mount_point) {
+		if normalized_path.starts_with(&volume.mount_point) {
 			return true;
 		}
 
 		// Check additional mount points
-		if volume.mount_points.iter().any(|mp| path.starts_with(mp)) {
+		if volume.mount_points.iter().any(|mp| normalized_path.starts_with(mp)) {
 			return true;
 		}
 

@@ -46,13 +46,27 @@ impl FilesystemHandler for GenericFilesystemHandler {
 	}
 
 	fn contains_path(&self, volume: &Volume, path: &std::path::Path) -> bool {
+		// Strip Windows extended path prefix if present
+		// This handles canonicalized paths that start with \\?\ (harmless on other platforms)
+		let normalized_path = if let Some(path_str) = path.to_str() {
+			if path_str.starts_with("\\\\?\\UNC\\") {
+				std::path::PathBuf::from(format!("\\\\{}", &path_str[8..]))
+			} else if let Some(stripped) = path_str.strip_prefix("\\\\?\\") {
+				std::path::PathBuf::from(stripped)
+			} else {
+				path.to_path_buf()
+			}
+		} else {
+			path.to_path_buf()
+		};
+
 		// Generic implementation: only check mount points
 		// Check primary mount point
-		if path.starts_with(&volume.mount_point) {
+		if normalized_path.starts_with(&volume.mount_point) {
 			return true;
 		}
 
 		// Check additional mount points
-		volume.mount_points.iter().any(|mp| path.starts_with(mp))
+		volume.mount_points.iter().any(|mp| normalized_path.starts_with(mp))
 	}
 }

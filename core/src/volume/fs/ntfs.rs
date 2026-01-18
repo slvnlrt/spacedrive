@@ -8,6 +8,12 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::task;
 use tracing::{debug, warn};
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::MAX_PATH;
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 
 /// NTFS filesystem handler
 pub struct NtfsHandler;
@@ -36,58 +42,53 @@ impl NtfsHandler {
 		let path = path.to_path_buf();
 
 		task::spawn_blocking(move || {
-			// Use PowerShell to get volume information
-			let script = format!(
-				r#"
-                $volume = Get-Volume -FilePath '{}'
-                $partition = Get-Partition -DriveLetter $volume.DriveLetter
-                $disk = Get-Disk -Number $partition.DiskNumber
+			let disks = sysinfo::Disks::new_with_refreshed_list();
+			let mut best_match: Option<(&sysinfo::Disk, usize)> = None;
 
-                [PSCustomObject]@{{
-                    VolumeGuid = $volume.UniqueId
-                    FileSystem = $volume.FileSystem
-                    DriveLetter = $volume.DriveLetter
-                    Label = $volume.FileSystemLabel
-                    Size = $volume.Size
-                    SizeRemaining = $volume.SizeRemaining
-                    DiskNumber = $partition.DiskNumber
-                    PartitionNumber = $partition.PartitionNumber
-                    MediaType = $disk.MediaType
-                }} | ConvertTo-Json
-                "#,
-				path.display()
-			);
-
-			let output = std::process::Command::new("powershell")
-				.args(["-Command", &script])
-				.output()
-				.map_err(|e| {
-					crate::volume::error::VolumeError::platform(format!(
-						"Failed to run PowerShell: {}",
-						e
-					))
-				})?;
-
-			if !output.status.success() {
-				return Err(crate::volume::error::VolumeError::platform(
-					"PowerShell command failed".to_string(),
-				));
+			// Find the disk with the longest mount point that matches the path prefix
+			for disk in &disks {
+				let mount_point = disk.mount_point();
+				if path.starts_with(mount_point) {
+					let len = mount_point.as_os_str().len();
+					if best_match.map_or(true, |(_, l)| len > l) {
+						best_match = Some((disk, len));
+					}
+				}
 			}
 
-			let output_text = String::from_utf8_lossy(&output.stdout);
-			parse_volume_info(&output_text)
+			if let Some((disk, _)) = best_match {
+				let mount_str = disk.mount_point().to_string_lossy();
+				Ok(NtfsVolumeInfo {
+					volume_guid: mount_str.to_string(), // Fallback: use mount point as ID
+					file_system: disk.file_system().to_string_lossy().to_string(),
+					drive_letter: mount_str.chars().next(),
+					label: Some(disk.name().to_string_lossy().to_string()),
+					size_bytes: disk.total_space(),
+					available_bytes: disk.available_space(),
+					disk_number: None,
+					partition_number: None,
+					media_type: Some(if disk.is_removable() {
+						"Removable".to_string()
+					} else {
+						"Fixed".to_string()
+					}),
+				})
+			} else {
+				Err(crate::volume::error::VolumeError::NotFound(format!(
+					"No volume found for path {}",
+					path.display()
+				)))
+			}
 		})
 		.await
-		.map_err(|e| {
-			crate::volume::error::VolumeError::platform(format!("Task join error: {}", e))
-		})?
+		.map_err(|e| crate::volume::error::VolumeError::platform(format!("Task join error: {}", e)))?
 	}
 
 	/// Check if NTFS hardlinks are supported (they always are on NTFS)
 	pub async fn supports_hardlinks(&self, path: &Path) -> bool {
 		// NTFS always supports hardlinks
 		if let Ok(vol_info) = self.get_volume_info(path).await {
-			return vol_info.file_system == "NTFS";
+			return vol_info.file_system.to_uppercase() == "NTFS";
 		}
 		false
 	}
@@ -96,7 +97,7 @@ impl NtfsHandler {
 	pub async fn supports_junctions(&self, path: &Path) -> bool {
 		// NTFS supports junction points (directory symbolic links)
 		if let Ok(vol_info) = self.get_volume_info(path).await {
-			return vol_info.file_system == "NTFS";
+			return vol_info.file_system.to_uppercase() == "NTFS";
 		}
 		false
 	}
@@ -104,117 +105,103 @@ impl NtfsHandler {
 	/// Resolve junction points and symbolic links
 	pub async fn resolve_ntfs_path(&self, path: &Path) -> PathBuf {
 		let path = path.to_path_buf();
-		// Clone the path so we have an owned copy to move into the closure
-		// while keeping the original 'path' available for the fallback (unwrap_or)
-		let path_clone = path.clone();
-
-		let result = task::spawn_blocking(move || {
-			// Use the cloned path inside the closure
-			let path = path_clone;
-
-			// Use PowerShell to resolve the path
-			let script = format!(
-				r#"
-                try {{
-                    $resolvedPath = Resolve-Path -Path '{}' -ErrorAction Stop
-                    Write-Output $resolvedPath.Path
-                }} catch {{
-                    Write-Output '{}'
-                }}
-                "#,
-				path.display(),
-				path.display()
-			);
-
-			let output = std::process::Command::new("powershell")
-				.args(["-Command", &script])
-				.output();
-
-			match output {
-				Ok(output) if output.status.success() => {
-					let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-					if !resolved.is_empty() {
-						PathBuf::from(resolved)
+		let path_for_closure = path.clone();
+		task::spawn_blocking(move || {
+			// Use standard library canonicalize
+			match std::fs::canonicalize(&path_for_closure) {
+				Ok(p) => {
+					// Strip \\?\ prefix on Windows
+					let s = p.to_string_lossy();
+					if s.starts_with(r"\\?\") {
+						PathBuf::from(&s[4..])
 					} else {
-						path
+						p
 					}
 				}
-				_ => path,
+				Err(_) => path_for_closure, // Fallback to original path if resolution fails
 			}
 		})
-		.await;
-
-		// If the task fails (e.g. panic), return the original path
-		result.unwrap_or(path)
+		.await
+		.unwrap_or(path) // If task join fails, return original path
 	}
 
 	/// Get NTFS file system features
 	pub async fn get_ntfs_features(&self, path: &Path) -> VolumeResult<NtfsFeatures> {
 		let path = path.to_path_buf();
-
 		task::spawn_blocking(move || {
-			// Use fsutil to get NTFS features
-			let script = format!(
-				r#"
-                $driveLetter = Split-Path -Path '{}' -Qualifier
-                $features = @{{}}
+			#[cfg(windows)]
+			{
+				let path_str = path.as_os_str();
+				let wide_path: Vec<u16> = path_str.encode_wide().chain(std::iter::once(0)).collect();
+				let mut root_path = [0u16; MAX_PATH as usize];
 
-                # Check for compression support
-                try {{
-                    $compressionInfo = fsutil behavior query DisableCompression 2>$null
-                    $features.SupportsCompression = $true
-                }} catch {{
-                    $features.SupportsCompression = $false
-                }}
+				// 1. Get volume root path (resolves mount points etc.)
+				let success = unsafe {
+					GetVolumePathNameW(
+						wide_path.as_ptr(),
+						root_path.as_mut_ptr(),
+						root_path.len() as u32,
+					)
+				};
 
-                # Check for encryption support
-                try {{
-                    $encryptionInfo = fsutil behavior query DisableEncryption 2>$null
-                    $features.SupportsEncryption = $true
-                }} catch {{
-                    $features.SupportsEncryption = $false
-                }}
+				if success == 0 {
+					return Err(crate::volume::error::VolumeError::platform(
+						"Failed to get volume path name".to_string(),
+					));
+				}
 
-                # NTFS always supports these
-                $features.SupportsHardlinks = $true
-                $features.SupportsJunctions = $true
-                $features.SupportsSymlinks = $true
-                $features.SupportsStreams = $true
+				// 2. Get volume information
+				let mut flags: u32 = 0;
+				let success = unsafe {
+					GetVolumeInformationW(
+						root_path.as_ptr(),
+						std::ptr::null_mut(),
+						0,
+						std::ptr::null_mut(),
+						std::ptr::null_mut(),
+						&mut flags,
+						std::ptr::null_mut(),
+						0,
+					)
+				};
 
-                $features | ConvertTo-Json
-                "#,
-				path.display()
-			);
+				if success == 0 {
+					return Err(crate::volume::error::VolumeError::platform(
+						"Failed to get volume information".to_string(),
+					));
+				}
 
-			let output = std::process::Command::new("powershell")
-				.args(["-Command", &script])
-				.output()
-				.map_err(|e| {
-					crate::volume::error::VolumeError::platform(format!(
-						"Failed to run PowerShell: {}",
-						e
-					))
-				})?;
+				// Constants for GetVolumeInformationW bits
+				// Constants for GetVolumeInformationW bits
+				const FILE_FILE_COMPRESSION: u32 = 0x00000010;
+				const FILE_SUPPORTS_REPARSE_POINTS: u32 = 0x00000080;
+				const FILE_SUPPORTS_ENCRYPTION: u32 = 0x00020000;
+				const FILE_NAMED_STREAMS: u32 = 0x00040000;
+				const FILE_SUPPORTS_HARD_LINKS: u32 = 0x00400000;
 
-			if !output.status.success() {
-				// Return default NTFS features
-				return Ok(NtfsFeatures {
+				Ok(NtfsFeatures {
+					supports_hardlinks: (flags & FILE_SUPPORTS_HARD_LINKS) != 0,
+					supports_junctions: (flags & FILE_SUPPORTS_REPARSE_POINTS) != 0,
+					supports_symlinks: (flags & FILE_SUPPORTS_REPARSE_POINTS) != 0,
+					supports_streams: (flags & FILE_NAMED_STREAMS) != 0,
+					supports_compression: (flags & FILE_FILE_COMPRESSION) != 0,
+					supports_encryption: (flags & FILE_SUPPORTS_ENCRYPTION) != 0,
+				})
+			}
+			#[cfg(not(windows))]
+			{
+				Ok(NtfsFeatures {
 					supports_hardlinks: true,
 					supports_junctions: true,
 					supports_symlinks: true,
 					supports_streams: true,
 					supports_compression: true,
 					supports_encryption: true,
-				});
+				})
 			}
-
-			let output_text = String::from_utf8_lossy(&output.stdout);
-			parse_ntfs_features(&output_text)
 		})
 		.await
-		.map_err(|e| {
-			crate::volume::error::VolumeError::platform(format!("Task join error: {}", e))
-		})?
+		.map_err(|e| crate::volume::error::VolumeError::platform(format!("Task join error: {}", e)))?
 	}
 }
 
@@ -242,13 +229,27 @@ impl super::FilesystemHandler for NtfsHandler {
 	}
 
 	fn contains_path(&self, volume: &Volume, path: &std::path::Path) -> bool {
+		// Strip Windows extended path prefix if present
+		// This handles canonicalized paths that start with \\?\
+		let normalized_path = if let Some(path_str) = path.to_str() {
+			if path_str.starts_with("\\\\?\\UNC\\") {
+				PathBuf::from(format!("\\\\{}", &path_str[8..]))
+			} else if let Some(stripped) = path_str.strip_prefix("\\\\?\\") {
+				PathBuf::from(stripped)
+			} else {
+				path.to_path_buf()
+			}
+		} else {
+			path.to_path_buf()
+		};
+
 		// Check primary mount point
-		if path.starts_with(&volume.mount_point) {
+		if normalized_path.starts_with(&volume.mount_point) {
 			return true;
 		}
 
 		// Check additional mount points
-		if volume.mount_points.iter().any(|mp| path.starts_with(mp)) {
+		if volume.mount_points.iter().any(|mp| normalized_path.starts_with(mp)) {
 			return true;
 		}
 
@@ -285,101 +286,8 @@ pub struct NtfsFeatures {
 	pub supports_encryption: bool,
 }
 
-/// Parse PowerShell volume info JSON output
-fn parse_volume_info(json_output: &str) -> VolumeResult<NtfsVolumeInfo> {
-	// Simple JSON parsing - in production, you'd use serde_json
-	let json_output = json_output.trim();
 
-	let volume_guid = extract_json_string(json_output, "VolumeGuid").unwrap_or_default();
-	let file_system = extract_json_string(json_output, "FileSystem").unwrap_or_default();
-	let drive_letter_str = extract_json_string(json_output, "DriveLetter");
-	let label = extract_json_string(json_output, "Label");
-	let size_bytes = extract_json_number(json_output, "Size").unwrap_or(0);
-	let available_bytes = extract_json_number(json_output, "SizeRemaining").unwrap_or(0);
-	let disk_number = extract_json_number(json_output, "DiskNumber").map(|n| n as u32);
-	let partition_number = extract_json_number(json_output, "PartitionNumber").map(|n| n as u32);
-	let media_type = extract_json_string(json_output, "MediaType");
 
-	let drive_letter = drive_letter_str.and_then(|s| s.chars().next());
-
-	Ok(NtfsVolumeInfo {
-		volume_guid,
-		file_system,
-		drive_letter,
-		label,
-		size_bytes,
-		available_bytes,
-		disk_number,
-		partition_number,
-		media_type,
-	})
-}
-
-/// Parse NTFS features JSON output
-fn parse_ntfs_features(json_output: &str) -> VolumeResult<NtfsFeatures> {
-	// Simple parsing - in production, use proper JSON parser
-	let json_output = json_output.trim();
-
-	let supports_compression =
-		extract_json_bool(json_output, "SupportsCompression").unwrap_or(true);
-	let supports_encryption = extract_json_bool(json_output, "SupportsEncryption").unwrap_or(true);
-
-	Ok(NtfsFeatures {
-		supports_hardlinks: true, // NTFS always supports these
-		supports_junctions: true,
-		supports_symlinks: true,
-		supports_streams: true,
-		supports_compression,
-		supports_encryption,
-	})
-}
-
-/// Extract string value from JSON (simple implementation)
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
-	let pattern = format!("\"{}\":", key);
-	if let Some(start) = json.find(&pattern) {
-		let start = start + pattern.len();
-		if let Some(value_start) = json[start..].find('"') {
-			let value_start = start + value_start + 1;
-			if let Some(value_end) = json[value_start..].find('"') {
-				let value = &json[value_start..value_start + value_end];
-				if value != "null" && !value.is_empty() {
-					return Some(value.to_string());
-				}
-			}
-		}
-	}
-	None
-}
-
-/// Extract number value from JSON (simple implementation)
-fn extract_json_number(json: &str, key: &str) -> Option<u64> {
-	let pattern = format!("\"{}\":", key);
-	if let Some(start) = json.find(&pattern) {
-		let start = start + pattern.len();
-		let remaining = json[start..].trim_start();
-		if let Some(end) = remaining.find(|c: char| !c.is_ascii_digit()) {
-			let number_str = &remaining[..end];
-			return number_str.parse().ok();
-		}
-	}
-	None
-}
-
-/// Extract boolean value from JSON (simple implementation)
-fn extract_json_bool(json: &str, key: &str) -> Option<bool> {
-	let pattern = format!("\"{}\":", key);
-	if let Some(start) = json.find(&pattern) {
-		let start = start + pattern.len();
-		let remaining = json[start..].trim_start();
-		if remaining.starts_with("true") {
-			return Some(true);
-		} else if remaining.starts_with("false") {
-			return Some(false);
-		}
-	}
-	None
-}
 
 /// Enhance volume with NTFS-specific information from Windows
 pub async fn enhance_volume_from_windows(volume: &mut Volume) -> VolumeResult<()> {
@@ -393,27 +301,5 @@ pub async fn enhance_volume_from_windows(volume: &mut Volume) -> VolumeResult<()
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn test_extract_json_string() {
-		let json =
-			r#"{"VolumeGuid": "12345678-1234-1234-1234-123456789abc", "FileSystem": "NTFS"}"#;
-		assert_eq!(
-			extract_json_string(json, "VolumeGuid"),
-			Some("12345678-1234-1234-1234-123456789abc".to_string())
-		);
-		assert_eq!(
-			extract_json_string(json, "FileSystem"),
-			Some("NTFS".to_string())
-		);
-		assert_eq!(extract_json_string(json, "NonExistent"), None);
-	}
-
-	#[test]
-	fn test_extract_json_bool() {
-		let json = r#"{"SupportsCompression": true, "SupportsEncryption": false}"#;
-		assert_eq!(extract_json_bool(json, "SupportsCompression"), Some(true));
-		assert_eq!(extract_json_bool(json, "SupportsEncryption"), Some(false));
-		assert_eq!(extract_json_bool(json, "NonExistent"), None);
-	}
+	// Tests for extract_json_string removed as the function was replaced by sysinfo
 }

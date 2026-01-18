@@ -1,12 +1,17 @@
 //! Volume untrack action
+//!
+//! This action untracks a volume from the library. It delegates to
+//! `VolumeManager::untrack_volume_by_id()` to ensure consistent behavior:
+//! - Database record is deleted
+//! - In-memory cache is updated (is_tracked = false)
+//! - ResourceChanged event is emitted (NOT ResourceDeleted, since the volume still exists)
+//!
+//! The distinction matters: untracking means Spacedrive will stop indexing/managing
+//! the volume, but the physical volume still exists and should remain visible in the UI
+//! with an "untracked" indicator.
 
 use super::{VolumeUntrackInput, VolumeUntrackOutput};
-use crate::{
-	context::CoreContext,
-	domain::{resource::Identifiable, volume::Volume},
-	infra::{action::error::ActionError, db::entities, event::Event},
-};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use crate::{context::CoreContext, infra::action::error::ActionError};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -36,25 +41,17 @@ impl crate::infra::action::LibraryAction for VolumeUntrackAction {
 		library: Arc<crate::library::Library>,
 		context: Arc<CoreContext>,
 	) -> Result<Self::Output, ActionError> {
-		let db = library.db().conn();
-
-		// Find the volume in the database
-		let volume = entities::volume::Entity::find()
-			.filter(entities::volume::Column::Uuid.eq(self.input.volume_id))
-			.one(db)
-			.await
-			.map_err(|e| ActionError::Internal(e.to_string()))?
-			.ok_or_else(|| ActionError::Internal("Volume not found".to_string()))?;
-
-		// Delete the volume from database
-		entities::volume::Entity::delete_by_id(volume.id)
-			.exec(db)
+		// Delegate to VolumeManager for consistent behavior
+		// This ensures:
+		// 1. Database record is properly deleted
+		// 2. In-memory cache is updated (is_tracked = false, library_id = None)
+		// 3. VolumeRemoved event is emitted for internal listeners
+		// 4. ResourceChanged event is emitted for UI reactivity (NOT ResourceDeleted!)
+		context
+			.volume_manager
+			.untrack_volume_by_id(&library, self.input.volume_id)
 			.await
 			.map_err(|e| ActionError::Internal(e.to_string()))?;
-
-		// Emit ResourceDeleted event using EventEmitter
-		use crate::domain::resource::EventEmitter;
-		Volume::emit_deleted(self.input.volume_id, &context.events);
 
 		Ok(VolumeUntrackOutput {
 			volume_id: self.input.volume_id,

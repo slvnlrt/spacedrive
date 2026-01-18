@@ -82,7 +82,6 @@ pub struct VolumeManager {
 
 	/// Weak reference to library manager for database operations
 	library_manager: Arc<RwLock<Option<Weak<LibraryManager>>>>,
-
 }
 
 impl VolumeManager {
@@ -634,8 +633,10 @@ impl VolumeManager {
 		}
 
 		// Query database for tracked volumes to merge metadata
-		let mut tracked_volumes_map: HashMap<VolumeFingerprint, (Uuid, Option<String>, Option<u64>, Option<u64>)> =
-			HashMap::new();
+		let mut tracked_volumes_map: HashMap<
+			VolumeFingerprint,
+			(Uuid, Option<String>, Option<u64>, Option<u64>),
+		> = HashMap::new();
 		if let Some(lib_mgr) = library_manager.read().await.as_ref() {
 			if let Some(lib_mgr) = lib_mgr.upgrade() {
 				let libraries = lib_mgr.get_open_libraries().await;
@@ -685,6 +686,7 @@ impl VolumeManager {
 		}
 
 		let mut current_volumes = volumes.write().await;
+
 		let mut cache = path_cache.write().await;
 
 		// Track which volumes we've seen in this refresh
@@ -696,7 +698,9 @@ impl VolumeManager {
 			seen_fingerprints.insert(fingerprint.clone());
 
 			// Merge tracked volume metadata from database
-			if let Some((library_id, display_name, read_speed, write_speed)) = tracked_volumes_map.get(&fingerprint) {
+			if let Some((library_id, display_name, read_speed, write_speed)) =
+				tracked_volumes_map.get(&fingerprint)
+			{
 				detected.is_tracked = true;
 				detected.library_id = Some(*library_id);
 				detected.display_name = display_name.clone();
@@ -712,10 +716,14 @@ impl VolumeManager {
 				detected.is_tracked
 			);
 
-			match current_volumes.get(&fingerprint) {
-				Some(existing) => {
+			// Check if volume exists and get necessary info to avoid holding a borrow
+			let existing_data = current_volumes
+				.get(&fingerprint)
+				.map(|v| (v.id, VolumeInfo::from(v)));
+
+			match existing_data {
+				Some((existing_id, old_info)) => {
 					// Volume exists - check for changes
-					let old_info = VolumeInfo::from(existing);
 					let new_info = VolumeInfo::from(&detected);
 
 					if old_info.is_mounted != new_info.is_mounted
@@ -724,6 +732,8 @@ impl VolumeManager {
 					{
 						// Update the volume
 						let mut updated_volume = detected.clone();
+						// CRITICAL: Preserve the existing volume ID to prevent UI duplication
+						updated_volume.id = existing_id;
 						updated_volume.update_info(new_info.clone());
 						current_volumes.insert(fingerprint.clone(), updated_volume.clone());
 
@@ -740,23 +750,26 @@ impl VolumeManager {
 								fingerprint: fingerprint.clone(),
 								is_mounted: new_info.is_mounted,
 							});
+						}
 
-							// Auto-run speed test when volume is mounted
-							if new_info.is_mounted
-								&& updated_volume.is_user_visible
-								&& !updated_volume.is_read_only
-							{
-								if let Some(ref mgr) = manager {
-									let mgr = mgr.clone();
-									let fp = fingerprint.clone();
-									let vol_name = updated_volume.name.clone();
-									tokio::spawn(async move {
-										info!("Auto-running speed test for mounted volume: {}", vol_name);
-										if let Err(e) = mgr.run_speed_test(&fp).await {
-											warn!("Auto speed test failed: {}", e);
-										}
-									});
-								}
+						// Auto-run speed test when volume is mounted
+						if new_info.is_mounted
+							&& updated_volume.is_user_visible
+							&& !updated_volume.is_read_only
+						{
+							if let Some(ref mgr) = manager {
+								let mgr = mgr.clone();
+								let fp = fingerprint.clone();
+								let vol_name = updated_volume.name.clone();
+								tokio::spawn(async move {
+									info!(
+										"Auto-running speed test for mounted volume: {}",
+										vol_name
+									);
+									if let Err(e) = mgr.run_speed_test(&fp).await {
+										warn!("Auto speed test failed: {}", e);
+									}
+								});
 							}
 						}
 
@@ -772,19 +785,12 @@ impl VolumeManager {
 				None => {
 					// New volume discovered
 					info!("New volume discovered: {}", detected.name);
-
-					// Update cache for all mount points
-					cache.insert(detected.mount_point.clone(), fingerprint.clone());
-					for mount_point in &detected.mount_points {
-						cache.insert(mount_point.clone(), fingerprint.clone());
-					}
-
 					current_volumes.insert(fingerprint.clone(), detected.clone());
 
 					// Emit volume added event
 					events.emit(Event::VolumeAdded(detected.clone()));
 
-					// Auto-run speed test for newly discovered mounted volumes
+					// Auto-run speed test for new volumes
 					if detected.is_mounted && detected.is_user_visible && !detected.is_read_only {
 						if let Some(ref mgr) = manager {
 							let mgr = mgr.clone();
@@ -797,23 +803,6 @@ impl VolumeManager {
 								}
 							});
 						}
-					}
-
-					// Emit ResourceChanged event for UI reactivity (only for user-visible volumes)
-					if detected.is_user_visible {
-						debug!(
-							"Emitting ResourceChanged for user-visible volume: {} (is_user_visible={})",
-							detected.name, detected.is_user_visible
-						);
-						use crate::domain::resource::EventEmitter;
-						if let Err(e) = detected.emit_changed(&events) {
-							warn!("Failed to emit volume ResourceChanged: {}", e);
-						}
-					} else {
-						debug!(
-							"Skipping ResourceChanged for non-user-visible volume: {} (is_user_visible={})",
-							detected.name, detected.is_user_visible
-						);
 					}
 				}
 			}
@@ -952,18 +941,33 @@ impl VolumeManager {
 		// IMPORTANT: Sort by mount point length (longest first) so more specific mounts
 		// are checked before generic ones (e.g., /System/Volumes/Data before /)
 		let volumes = self.volumes.read().await;
-		info!("volume_for_path: Looking for path {} in {} volumes", canonical_path.display(), volumes.len());
+		info!(
+			"volume_for_path: Looking for path {} in {} volumes",
+			canonical_path.display(),
+			volumes.len()
+		);
 
 		let mut sorted_volumes: Vec<_> = volumes.iter().collect();
 		sorted_volumes.sort_by(|a, b| {
-			b.1.mount_point.to_string_lossy().len()
+			b.1.mount_point
+				.to_string_lossy()
+				.len()
 				.cmp(&a.1.mount_point.to_string_lossy().len())
 		});
 
 		for (fp, volume) in sorted_volumes {
-			info!("volume_for_path: Checking volume '{}' at {} (fingerprint: {})", volume.name, volume.mount_point.display(), fp.0);
+			info!(
+				"volume_for_path: Checking volume '{}' at {} (fingerprint: {})",
+				volume.name,
+				volume.mount_point.display(),
+				fp.0
+			);
 			if volume.contains_path(&canonical_path) {
-				info!("volume_for_path: MATCH! Path {} is on volume '{}'", canonical_path.display(), volume.name);
+				info!(
+					"volume_for_path: MATCH! Path {} is on volume '{}'",
+					canonical_path.display(),
+					volume.name
+				);
 				// Cache the result using canonical path
 				let mut cache = self.path_cache.write().await;
 				cache.insert(canonical_path.clone(), volume.fingerprint.clone());
@@ -971,7 +975,11 @@ impl VolumeManager {
 			}
 		}
 
-		info!("No volume found for path: {} (searched {} volumes)", canonical_path.display(), volumes.len());
+		info!(
+			"No volume found for path: {} (searched {} volumes)",
+			canonical_path.display(),
+			volumes.len()
+		);
 		None
 	}
 
@@ -996,7 +1004,10 @@ impl VolumeManager {
 		// Check if this is a cloud path
 		if let Some((service, identifier, _path)) = sdpath.as_cloud() {
 			// Cloud path - use identity-based lookup
-			info!("Cloud path detected: service={:?}, identifier={}", service, identifier);
+			info!(
+				"Cloud path detected: service={:?}, identifier={}",
+				service, identifier
+			);
 			Ok(self.find_cloud_volume(service, identifier).await)
 		} else {
 			// Local path - resolve by filesystem path
@@ -1368,8 +1379,7 @@ impl VolumeManager {
 
 		debug!(
 			"Successfully inserted volume into database - id: {}, uuid: {}",
-			model.id,
-			model.uuid
+			model.id, model.uuid
 		);
 
 		// Verify the insert by immediately querying it back
@@ -1394,14 +1404,9 @@ impl VolumeManager {
 		);
 
 		// Emit tracking event
-		self.events.emit(Event::Custom {
-			event_type: "VolumeTracked".to_string(),
-			data: serde_json::json!({
-				"library_id": library.id(),
-				"volume_fingerprint": fingerprint.to_string(),
-				"display_name": final_display_name,
-			}),
-		});
+
+		// Emit tracking event
+		self.events.emit(Event::VolumeAdded(volume.clone()));
 
 		Ok(model)
 	}
@@ -1486,7 +1491,24 @@ impl VolumeManager {
 		Ok(model.id)
 	}
 
-	/// Untrack a volume from the database
+	/// Untrack a volume from the database and update in-memory state.
+	///
+	/// This is the authoritative method for untracking volumes. It:
+	/// 1. Removes the volume record from the database
+	/// 2. Updates the in-memory cache to set `is_tracked = false`
+	/// 3. Emits `VolumeRemoved` for internal listeners
+	/// 4. Emits `ResourceChanged` to update the UI (NOT `ResourceDeleted`, since the
+	///    physical volume still exists - it's just no longer tracked)
+	///
+	/// The `VolumeUntrackAction` delegates to this method to ensure consistent behavior.
+	///
+	/// # Arguments
+	/// * `library` - The library the volume was tracked in
+	/// * `fingerprint` - The fingerprint of the volume to untrack
+	///
+	/// # Returns
+	/// * `Ok(())` if the volume was successfully untracked
+	/// * `Err(VolumeError::NotTracked)` if the volume wasn't tracked
 	pub async fn untrack_volume(
 		&self,
 		library: &crate::library::Library,
@@ -1494,6 +1516,7 @@ impl VolumeManager {
 	) -> VolumeResult<()> {
 		let db = library.db().conn();
 
+		// Step 1: Delete from database
 		let result = entities::volume::Entity::delete_many()
 			.filter(entities::volume::Column::Fingerprint.eq(fingerprint.0.clone()))
 			.exec(db)
@@ -1510,16 +1533,71 @@ impl VolumeManager {
 			library.name().await
 		);
 
-		// Emit untracking event
-		self.events.emit(Event::Custom {
-			event_type: "VolumeUntracked".to_string(),
-			data: serde_json::json!({
-				"library_id": library.id(),
-				"volume_fingerprint": fingerprint.to_string(),
-			}),
+		// Step 2: Update in-memory cache to reflect untracked state
+		// This prevents the volume from being re-added with a new UUID on the next refresh
+		let updated_volume = {
+			let mut volumes = self.volumes.write().await;
+			if let Some(volume) = volumes.get_mut(fingerprint) {
+				volume.untrack(); // Sets is_tracked = false, library_id = None
+				Some(volume.clone())
+			} else {
+				None
+			}
+		};
+
+		// Step 3: Emit events for internal listeners and UI reactivity
+		self.events.emit(Event::VolumeRemoved {
+			fingerprint: fingerprint.clone(),
 		});
 
+		// Step 4: Emit ResourceChanged (NOT ResourceDeleted!) for UI updates
+		// The volume still exists physically, it's just untracked - the UI should
+		// update to show the "eye-slash" icon, not remove the volume entirely
+		if let Some(volume) = updated_volume {
+			use crate::domain::resource::EventEmitter;
+			if let Err(e) = volume.emit_changed(&self.events) {
+				warn!("Failed to emit ResourceChanged for untracked volume: {}", e);
+			}
+		}
+
 		Ok(())
+	}
+
+	/// Untrack a volume by its UUID.
+	///
+	/// This is a convenience method for the frontend `VolumeUntrackAction` which
+	/// receives a volume UUID. It looks up the fingerprint from the in-memory cache
+	/// and delegates to `untrack_volume()`.
+	///
+	/// # Arguments
+	/// * `library` - The library the volume is tracked in
+	/// * `volume_id` - The UUID of the volume to untrack
+	///
+	/// # Returns
+	/// * `Ok(())` if the volume was successfully untracked
+	/// * `Err(VolumeError::NotFound)` if the volume UUID is not known
+	/// * `Err(VolumeError::NotTracked)` if the volume exists but isn't tracked
+	pub async fn untrack_volume_by_id(
+		&self,
+		library: &crate::library::Library,
+		volume_id: Uuid,
+	) -> VolumeResult<()> {
+		// Look up the fingerprint from the in-memory cache
+		let fingerprint = {
+			let volumes = self.volumes.read().await;
+			volumes
+				.values()
+				.find(|v| v.id == volume_id)
+				.map(|v| v.fingerprint.clone())
+		};
+
+		match fingerprint {
+			Some(fp) => self.untrack_volume(library, &fp).await,
+			None => Err(VolumeError::NotFound(format!(
+				"Volume with UUID {} not found in cache",
+				volume_id
+			))),
+		}
 	}
 
 	/// Get tracked volumes for a library
@@ -2056,7 +2134,6 @@ impl VolumeManager {
 
 		None
 	}
-
 }
 
 /// Statistics about detected volumes
