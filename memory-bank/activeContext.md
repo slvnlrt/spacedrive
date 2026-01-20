@@ -2,22 +2,24 @@
 
 ## Current Focus
 
-Build Fixes Complete. Ready to resume security remediation or other development work.
+**Windows Stability & Test Suite Repair Complete.**
+The project is now in a stable state on Windows, with all critical volume detection, file operation, and UI synchronization bugs resolved. The test suite is passing (321 tests).
 
 ## Recent Changes
 
-- **Jan 17, 2026**: Merged upstream changes and resolved all build/runtime blockers.
-- **RPC Compatibility**: Updated Tauri `main.rs` to use the new `DaemonRequest::Query` format instead of legacy JSON-RPC 2.0.
-- **Library Init Fix**: Robust directory validation in `LibraryManager` to prevent crashes when encountering files with `.sdlibrary` extension.
-- **Frontend Cleanup**: Commented out missing `LocationCacheDemo` to fix Vite build and runtime syntax errors.
-- **Warning Suppression**: Cleaned up dozens of compiler warnings (unused imports/variables, unreachable code) for a cleaner DevEx.
+- **Jan 20, 2026**: Completed major Windows stability overhaul.
+- **Unit Tests**: Fixed all breakages in `sd-core` tests (`manager.rs`, `progress.rs`, `volume_fingerprint`).
+- **Performance**: Removed PowerShell dependency for ReFS checks in favor of native Win32 API.
+- **Bug Fixes**: resolved Volume duplication, UI latency on file operations, and ephemeral job event propagation.
 
 ## Next Steps
 
-1. **Verify Core Features**: Check if indexing and basic file operations are working as expected after the upgrade.
-2. **Security Remediation**: Resume work on NET-03, IPC-01, and SRV-01 by porting previous logic to the new v2 architecture.
+1.  **Address Database Lock (Issue #8)**: Implement retry logic for location removal.
+2.  **Fix False Positive Paths (Issue #7)**: Allow standard OneDrive/User folders in onboarding.
+3.  **Resume Security Roadmap**: Now that the build is stable, proceed with `IPC-01` (Daemon IPC security) and `NET-03` (P2P Handshake).
 
 ## Active Decisions
 
-- **Windows inode**: Using `None` on Windows until `windows_by_handle` feature stabilizes.
-- **RPC Format**: Exclusively using the enum-based `DaemonRequest` structure for all internal communication.
+- **Deterministic UUIDs**: Volumes now use v5 UUIDs derived from hardware/FS fingerprints to ensure persistence across restarts.
+- **Native IOCTLs**: We prefer `windows-sys` and direct IOCTL calls over spawning shell processes for performance and stability.
+- **Memory Bank**: Documentation for this session is stored in `memory-bank/` including `windows_fixes_pr.md` and `known_issues.md`.
