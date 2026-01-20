@@ -22,4 +22,5 @@ The project is now in a stable state on Windows, with all critical volume detect
 
 - **Deterministic UUIDs**: Volumes now use v5 UUIDs derived from hardware/FS fingerprints to ensure persistence across restarts.
 - **Native IOCTLs**: We prefer `windows-sys` and direct IOCTL calls over spawning shell processes for performance and stability.
+- **Workflow**: Git strategy for upstream synchronization and PR preparation is documented in `memory-bank/workflow.md`.
 - **Memory Bank**: Documentation for this session is stored in `memory-bank/` including `windows_fixes_pr.md` and `known_issues.md`.
