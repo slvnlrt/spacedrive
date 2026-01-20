@@ -9,11 +9,14 @@ export {Shell} from './Shell';
 export {DemoWindow} from './windows/DemoWindow';
 export {ErrorBoundary} from './components/ErrorBoundary';
 export {FloatingControls} from './windows/FloatingControls';
-// export { LocationCacheDemo } from "./demo/LocationCacheDemo";
 export {Inspector, PopoutInspector} from './components/Inspector/Inspector';
 export type {InspectorVariant} from './components/Inspector/Inspector';
 export {QuickPreview} from './components/QuickPreview';
 export {JobsScreen} from './components/JobManager';
+export {
+	JobsProvider,
+	useJobsContext
+} from './components/JobManager/hooks/JobsContext';
 export {Settings} from './routes/settings';
 export {Spacedrop} from './windows/Spacedrop';
 export {PairingModal} from './components/modals/PairingModal';

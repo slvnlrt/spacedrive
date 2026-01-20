@@ -1,9 +1,9 @@
 import {sounds} from '@sd/assets/sounds';
 import {
 	FloatingControls,
+	JobsProvider,
 	JobsScreen,
 	PlatformProvider,
-	// LocationCacheDemo,
 	PopoutInspector,
 	QuickPreview,
 	ServerProvider,
@@ -84,8 +84,6 @@ function App() {
 			setRoute('/inspector');
 		} else if (label.startsWith('quick-preview')) {
 			setRoute('/quick-preview');
-			// } else if (label.startsWith("cache-demo")) {
-			// 	setRoute("/cache-demo");
 		} else if (label.startsWith('job-manager')) {
 			setRoute('/job-manager');
 		}
@@ -252,18 +250,21 @@ function App() {
 			<PlatformProvider platform={platform}>
 				<SpacedriveProvider client={client}>
 					<ServerProvider>
-						<div className="bg-app h-screen overflow-hidden">
-							<PopoutInspector />
-						</div>
+						<JobsProvider>
+							<div className="bg-app h-screen overflow-hidden pt-[52px]">
+								{/* Drag region for macOS traffic lights area */}
+								<div
+									data-tauri-drag-region
+									className="absolute inset-x-0 top-0 z-50 h-[52px]"
+								/>
+								<PopoutInspector />
+							</div>
+						</JobsProvider>
 					</ServerProvider>
 				</SpacedriveProvider>
 			</PlatformProvider>
 		);
 	}
-
-	// if (route === "/cache-demo") {
-	// 	return <LocationCacheDemo />;
-	// }
 
 	if (route === '/quick-preview') {
 		return (
