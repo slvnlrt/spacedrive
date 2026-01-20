@@ -94,6 +94,7 @@ impl ToGenericProgress for IndexerProgress {
 		};
 
 		// Use actual file counts for completion (not batch numbers)
+		// Pass 0 as total to prevent with_completion from overwriting phase-based percentage
 		let completed_count = self.total_found.files + self.total_found.dirs;
 
 		let mut progress = GenericProgress::new(percentage, &phase_name, &phase_message)
@@ -168,9 +169,17 @@ mod tests {
 
 		let generic = indexer_progress.to_generic_progress();
 		assert_eq!(generic.phase, "Processing");
-		assert_eq!(generic.percentage, 0.32); // 0.2 + (0.3 * 0.4) = 0.32
-		assert_eq!(generic.completion.completed, 3);
-		assert_eq!(generic.completion.total, 10);
+		// 0.2 + (3/10 * 0.4) = 0.2 + 0.12 = 0.32
+		let expected = 0.32f32;
+		assert!(
+			(generic.percentage - expected).abs() < 0.001,
+			"Expected ~{}, got {}",
+			expected,
+			generic.percentage
+		);
+		// Completion uses total files+dirs found
+		assert_eq!(generic.completion.completed, 170); // 150 files + 20 dirs
+		assert_eq!(generic.completion.total, 0); // Unknown during indexing
 		assert_eq!(generic.performance.rate, 25.5);
 		assert_eq!(
 			generic.performance.estimated_remaining,
@@ -199,9 +208,17 @@ mod tests {
 
 		let generic = indexer_progress.to_generic_progress();
 		assert_eq!(generic.phase, "Content Identification");
-		assert_eq!(generic.percentage, 0.91); // 0.7 + (0.75 * 0.28) = 0.91
-		assert_eq!(generic.completion.completed, 75);
-		assert_eq!(generic.completion.total, 100);
+		// 0.7 + (75/100 * 0.28) = 0.7 + 0.21 = 0.91
+		let expected = 0.91f32;
+		assert!(
+			(generic.percentage - expected).abs() < 0.01,
+			"Expected ~{}, got {}",
+			expected,
+			generic.percentage
+		);
+		// Completion uses total files+dirs found (0 in this test since default stats)
+		assert_eq!(generic.completion.completed, 0);
+		assert_eq!(generic.completion.total, 0);
 	}
 
 	#[test]
@@ -224,9 +241,17 @@ mod tests {
 
 		let generic = indexer_progress.to_generic_progress();
 		assert_eq!(generic.phase, "Finalizing");
-		// With 95/100 progress: 0.99 + (0.95 * 0.01) = 0.9995
-		assert!((generic.percentage - 0.9995).abs() < 0.0001);
-		assert_eq!(generic.completion.completed, 95);
-		assert_eq!(generic.completion.total, 100);
+		// Finalizing: 95/100 = 0.95, clamped to min(0.95, 0.99) = 0.95
+		// percentage = 0.99 + (0.95 * 0.01) = 0.9995
+		let expected = 0.9995f32;
+		assert!(
+			(generic.percentage - expected).abs() < 0.001,
+			"Expected ~{}, got {}",
+			expected,
+			generic.percentage
+		);
+		// Completion uses total files+dirs found (0 in this test since default stats)
+		assert_eq!(generic.completion.completed, 0);
+		assert_eq!(generic.completion.total, 0);
 	}
 }

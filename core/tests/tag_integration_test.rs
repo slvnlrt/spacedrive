@@ -42,7 +42,7 @@ async fn test_tag_creation_and_application_with_events() -> anyhow::Result<()> {
 		.write_file("images/photo1.jpg", "Photo 1")
 		.await?;
 
-	let location = test_location
+	let _location = test_location
 		.index("Tag Test Location", IndexMode::Deep)
 		.await?;
 

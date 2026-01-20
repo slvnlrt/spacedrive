@@ -400,22 +400,22 @@ impl WindowsTestVolumeManager {
 			r#"
             $vhdPath = '{}'
             $sizeBytes = {}
-            
+
             # Create VHD
             New-VHD -Path $vhdPath -SizeBytes $sizeBytes -Dynamic
-            
+
             # Mount VHD
             $vhd = Mount-VHD -Path $vhdPath -PassThru
-            
+
             # Initialize disk
             $disk = Initialize-Disk -Number $vhd.Number -PartitionStyle MBR -PassThru
-            
+
             # Create partition
             $partition = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter
-            
+
             # Format volume
             Format-Volume -DriveLetter $partition.DriveLetter -FileSystem {} -NewFileSystemLabel '{}' -Confirm:$false
-            
+
             # Output drive letter
             Write-Output $partition.DriveLetter
             "#,
@@ -809,6 +809,7 @@ impl TestVolumeBuilder {
 	}
 
 	/// Make the volume read-only
+	#[allow(dead_code)]
 	pub fn read_only(mut self) -> Self {
 		self.config.read_only = true;
 		self

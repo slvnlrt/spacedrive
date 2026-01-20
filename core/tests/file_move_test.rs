@@ -303,7 +303,8 @@ async fn test_ephemeral_file_move_via_reindex() -> anyhow::Result<()> {
 
 	// Index in ephemeral mode
 	let test_root_sd = SdPath::local(test_root.clone());
-	let indexer_config = IndexerJobConfig::ephemeral_browse(test_root_sd, IndexScope::Recursive, false);
+	let indexer_config =
+		IndexerJobConfig::ephemeral_browse(test_root_sd, IndexScope::Recursive, false);
 	let indexer_job = IndexerJob::new(indexer_config);
 
 	tracing::info!("Initial ephemeral indexing");
@@ -328,7 +329,7 @@ async fn test_ephemeral_file_move_via_reindex() -> anyhow::Result<()> {
 
 	// Manual reindex to detect the change
 	let reindex_config =
-		IndexerJobConfig::ephemeral_browse(SdPath::local(test_root.clone()), IndexScope::Recursive, false);
+		IndexerJobConfig::ephemeral_browse(SdPath::local(test_root), IndexScope::Recursive, false);
 	let reindex_job = IndexerJob::new(reindex_config);
 	let reindex_handle = harness.library.jobs().dispatch(reindex_job).await?;
 	reindex_handle.wait().await?;
@@ -381,7 +382,8 @@ async fn test_ephemeral_file_move_via_watcher() -> anyhow::Result<()> {
 
 	// Index in ephemeral mode
 	let test_root_sd = SdPath::local(test_root.clone());
-	let indexer_config = IndexerJobConfig::ephemeral_browse(test_root_sd, IndexScope::Recursive, false);
+	let indexer_config =
+		IndexerJobConfig::ephemeral_browse(test_root_sd, IndexScope::Recursive, false);
 	let indexer_job = IndexerJob::new(indexer_config);
 
 	tracing::info!("Initial ephemeral indexing");
@@ -396,7 +398,7 @@ async fn test_ephemeral_file_move_via_watcher() -> anyhow::Result<()> {
 
 	// Register for watching
 	if let Some(watcher) = harness.core.context.get_fs_watcher().await {
-		watcher.watch_ephemeral(test_root.clone()).await?;
+		watcher.watch_ephemeral(test_root).await?;
 		tokio::time::sleep(Duration::from_millis(500)).await;
 	}
 

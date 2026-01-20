@@ -699,24 +699,6 @@ impl TestHarness {
 			.unwrap_or(0)
 	}
 
-	/// Verify children count using list_directory (catches the orphan bug)
-	async fn verify_children_count(
-		&self,
-		expected: usize,
-	) -> Result<(), Box<dyn std::error::Error>> {
-		let count = self.get_children_count().await;
-		if count == expected {
-			println!("✓ Children count (list_directory) matches: {}", expected);
-			Ok(())
-		} else {
-			Err(format!(
-				"Children count mismatch: expected {} but found {} (using list_directory)",
-				expected, count
-			)
-			.into())
-		}
-	}
-
 	/// Verify expected entry count
 	async fn verify_entry_count(&self, expected: usize) -> Result<(), Box<dyn std::error::Error>> {
 		let count = self.get_entry_count().await;

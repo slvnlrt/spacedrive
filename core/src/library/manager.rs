@@ -1908,10 +1908,26 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_is_library_directory() {
-		assert!(is_library_directory(Path::new(
-			"/path/to/My Library.sdlibrary"
+		// Create a temporary directory with .sdlibrary extension
+		let temp_dir = TempDir::new().unwrap();
+		let lib_path = temp_dir.path().join("My Library.sdlibrary");
+		std::fs::create_dir(&lib_path).unwrap();
+
+		// Valid library directory
+		assert!(is_library_directory(&lib_path));
+
+		// Non-library directories (exist but wrong extension)
+		let non_lib_path = temp_dir.path().join("My Library");
+		std::fs::create_dir(&non_lib_path).unwrap();
+		assert!(!is_library_directory(&non_lib_path));
+
+		let txt_path = temp_dir.path().join("My Library.txt");
+		std::fs::create_dir(&txt_path).unwrap();
+		assert!(!is_library_directory(&txt_path));
+
+		// Non-existent paths should also return false
+		assert!(!is_library_directory(Path::new(
+			"/path/to/nonexistent.sdlibrary"
 		)));
-		assert!(!is_library_directory(Path::new("/path/to/My Library")));
-		assert!(!is_library_directory(Path::new("/path/to/My Library.txt")));
 	}
 }
