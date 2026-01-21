@@ -7,6 +7,8 @@ The project is now in a stable state on Windows, with all critical volume detect
 
 ## Recent Changes
 
+- **Jan 21, 2026**: Checked `upstream/main` - 8 new commits detected. Simulation into `build-fix` is **clean** (no conflicts).
+- **Jan 20, 2026**: Synchronized with `upstream/main` - merged iOS volume detection, JobsProvider, BrowseScreen enhancements.
 - **Jan 20, 2026**: Completed major Windows stability overhaul.
 - **Unit Tests**: Fixed all breakages in `sd-core` tests (`manager.rs`, `progress.rs`, `volume_fingerprint`).
 - **Performance**: Removed PowerShell dependency for ReFS checks in favor of native Win32 API.
