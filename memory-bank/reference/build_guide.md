@@ -26,21 +26,56 @@ $env:PATH = "C:\Program Files\LLVM\bin;" +
    target-dir = "F:/spacedrive-target"
    ```
 
+## SpaceUI (prerequis frontend sur `spacedrive-data`)
+
+Le frontend sur la branche `spacedrive-data` depend de 3 packages du repo SpaceUI externe (`https://github.com/spacedriveapp/spaceui`). Sans ca, `bun install` echoue sur les `link:` deps.
+
+```powershell
+# 1. Cloner a cote de spacedrive
+cd E:\
+git clone https://github.com/spacedriveapp/spaceui.git
+
+# 2. Build et link chaque package
+cd E:\spaceui\packages\ai       && bun install && bun run build && bun link
+cd E:\spaceui\packages\primitives && bun install && bun run build && bun link
+cd E:\spaceui\packages\tokens    && bun install && bun run build && bun link
+
+# 3. Installer le frontend spacedrive normalement
+cd E:\spacedrive && bun install
+```
+
+Les packages sont references comme `link:` dans le `package.json` de spacedrive :
+
+```json
+"@spacedrive/ai": "link:@spacedrive/ai",
+"@spacedrive/primitives": "link:@spacedrive/primitives",
+"@spacedrive/tokens": "link:@spacedrive/tokens"
+```
+
+Note : les noms ont change au fil du temps (`@spaceui/*` -> `@spacedrive/*`). Verifier dans `package.json` si ca ne colle pas.
+
+`vite.config.ts` a aussi des source aliases vers `../../../spaceui/packages/...` pour le hot-reload en dev.
+
+Cette etape deviendra probablement inutile quand Jamie aura mis au propre le setup dans le README officiel.
+
 ## Commandes de build / test
 
 ### Tests unitaires (rapide, ~1s)
+
 ```powershell
 cargo test -p sd-core --lib
 # 321 tests, ~1s. Suffit pour valider les fixes core.
 ```
 
 ### Vérification de compilation (sans exécuter)
+
 ```powershell
 cargo check -p sd-core
 cargo check -p spacedrive
 ```
 
 ### Build debug (rapide, non optimisé)
+
 ```powershell
 cargo build
 # Exécutables dans target/debug/
@@ -48,6 +83,7 @@ cargo build
 ```
 
 ### Build release (lent — LTO + codegen-units=1)
+
 ```powershell
 cargo build --release
 # ~27 minutes. Exécutables dans target/release/
@@ -78,6 +114,7 @@ git checkout tauri.conf.json   # restaurer
 ```
 
 ### App en mode dev (avec hot-reload frontend)
+
 ```powershell
 cd apps/tauri
 bun run tauri:dev
