@@ -1,3 +1,5 @@
+> STATUS: DONE -- Implemented in PR #3041 (merged)
+
 # Implementation Plan: Content Path Resolution & Delete Fix
 
 **Status**: Draft — for separate PR targeting `upstream/v2`
@@ -25,6 +27,7 @@ Additionally, Jamie's `device_id → device_slug` refactor (commit `53a722a93`) 
 ### How Copy handles this (the model to follow)
 
 `CopyJob::run()` in `ops/files/copy/job.rs:341-355`:
+
 ```rust
 // Resolve destination
 let resolved_destination = self.destination.resolve_in_job(&ctx).await?;
@@ -39,6 +42,7 @@ Copy resolves Content → Physical **before** passing to strategies. Delete shou
 ### How File objects carry both paths
 
 `File::from_entry_uuids()` in `domain/file.rs:877-945`:
+
 - If entry has `content_id` → `sd_path = SdPath::Content { content_id }`
 - Physical path is added to `alternate_paths` via `PathResolver::get_full_path(db, entry.id)`
 - Other entries with same `content_id` are also added to `alternate_paths` (duplicates)
@@ -46,6 +50,7 @@ Copy resolves Content → Physical **before** passing to strategies. Delete shou
 ### What `resolve_in_job()` needs to do
 
 For `SdPath::Content { content_id }`:
+
 1. Query DB: find all entries with matching `content_identity.uuid == content_id`
 2. For each entry, resolve its physical path via `PathResolver::get_full_path(db, entry.id)`
 3. Check which ones are local (current device)
@@ -145,6 +150,7 @@ Insert this **after** `validate_targets()` and **before** `DeleteStrategyRouter:
 #### 4a. `delete/strategy.rs:343` — RemoteDeleteStrategy
 
 **Current** (broken):
+
 ```rust
 if let Some(device_id) = path.device_id() {
     by_device.entry(device_id).or_default().push(path.clone());
@@ -162,6 +168,7 @@ if let Some(slug) = path.device_slug() {
 Change `by_device` type from `HashMap<Uuid, Vec<SdPath>>` to `HashMap<String, Vec<SdPath>>`.
 
 Then in `delete_on_device()`, resolve slug to UUID via library's device manager:
+
 ```rust
 let device_id = ctx.resolve_device_slug(&device_slug).await
     .ok_or_else(|| anyhow::anyhow!("Unknown device: {}", device_slug))?;
@@ -197,14 +204,14 @@ Same migration pattern.
 
 ## Files Modified
 
-| File | Change |
-|------|--------|
-| `core/src/domain/addressing.rs` | Implement `resolve_in_job()` for Content |
-| `core/src/ops/addressing.rs` | Fix `unimplemented!()` → proper error or resolution |
-| `core/src/ops/files/delete/job.rs` | Add resolve loop before strategy selection |
+| File                                    | Change                                                      |
+| --------------------------------------- | ----------------------------------------------------------- |
+| `core/src/domain/addressing.rs`         | Implement `resolve_in_job()` for Content                    |
+| `core/src/ops/addressing.rs`            | Fix `unimplemented!()` → proper error or resolution         |
+| `core/src/ops/files/delete/job.rs`      | Add resolve loop before strategy selection                  |
 | `core/src/ops/files/delete/strategy.rs` | Fix `device_id()` → `device_slug()` in RemoteDeleteStrategy |
-| `core/src/ops/files/delete/routing.rs` | Fix `device_id()` → `device_slug()` in describe_strategy |
-| `core/src/ops/search/query.rs` | Fix `device_id()` → `device_slug()` |
+| `core/src/ops/files/delete/routing.rs`  | Fix `device_id()` → `device_slug()` in describe_strategy    |
+| `core/src/ops/search/query.rs`          | Fix `device_id()` → `device_slug()`                         |
 
 ---
 
