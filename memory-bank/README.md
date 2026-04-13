@@ -100,15 +100,16 @@ memory-bank/
 
 See `tracking/branches.md` for full details. Quick overview:
 
-| Branche                                      | Base                     | Covered by PR? | Notes                                 |
-| -------------------------------------------- | ------------------------ | -------------- | ------------------------------------- |
-| `main`                                       | upstream/main            | N/A            | In sync with upstream                 |
-| `tags-and-media-fixes`                       | upstream/spacedrive-data | PR #3044       | 22 commits                            |
-| `fix/overview-crash-single-resource-seeding` | upstream/spacedrive-data | PR #3048       | 1 commit                              |
-| `fix/windows-ico-and-svg-gradients`          | upstream/spacedrive-data | PR #3052       | 1 commit                              |
-| `spacedrive-data`                            | upstream/spacedrive-data | 3/4 covered    | Needs reset to upstream               |
-| `windows-local-fixes`                        | upstream/main            | No             | ARCHIVED — both commits obsolete      |
-| `security-fix`                               | ancien                   | No             | NET-01 vuln fix + security audit docs |
+| Branche                                      | Base                     | Covered by PR? | Notes                                        |
+| -------------------------------------------- | ------------------------ | -------------- | -------------------------------------------- |
+| `dev` \*                                     | upstream/spacedrive-data | —              | 26 commits: all code cumulated + docs        |
+| `tags-and-media-fixes`                       | upstream/spacedrive-data | PR #3044       | 22 commits                                   |
+| `fix/overview-crash-single-resource-seeding` | upstream/spacedrive-data | PR #3048       | 1 commit                                     |
+| `fix/windows-ico-and-svg-gradients`          | upstream/spacedrive-data | PR #3052       | 1 commit                                     |
+| `spacedrive-data`                            | upstream/spacedrive-data | N/A            | In sync with upstream (reset 2026-04-13)     |
+| `main`                                       | upstream/main            | N/A            | In sync with upstream                        |
+| `archive/windows-local-fixes`                | upstream/main            | No             | ARCHIVED — both commits obsolete             |
+| `security-fix`                               | ancien                   | No             | NET-01 vuln fix + security audit docs, no PR |
 
 ---
 

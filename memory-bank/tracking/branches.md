@@ -8,16 +8,16 @@ Jamie merged `main` into `upstream/spacedrive-data` on 2026-04-12 (commit `74cb8
 
 ## Local Branches
 
-| Branch                                       | Ahead of upstream                           | Covered by PR?     | Remote                        | Notes                                                                                                                                                                                       |
-| -------------------------------------------- | ------------------------------------------- | ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dev`                                        | 1 commit (docs) over `tags-and-media-fixes` | —                  | —                             | Current branch. `tags-and-media-fixes` + 1 docs commit.                                                                                                                                     |
-| `tags-and-media-fixes`                       | 22 commits                                  | PR #3044           | `origin/tags-and-media-fixes` | Rebased on spacedrive-data. Tags system + media context menu + FTS5 escaping + batch lookups.                                                                                               |
-| `fix/overview-crash-single-resource-seeding` | 1 commit                                    | PR #3048           | —                             | Rebased on spacedrive-data. Overview crash fix.                                                                                                                                             |
-| `fix/windows-ico-and-svg-gradients`          | 1 commit                                    | PR #3052           | —                             | Cherry-picked from spacedrive-data local. icon.ico + SVG gradients.                                                                                                                         |
-| `spacedrive-data`                            | 4 commits (21 behind upstream)              | 3/4 covered by PRs | upstream                      | Only icon.ico commit was orphan, now PR #3052. Branch needs reset to upstream.                                                                                                              |
-| `security-fix`                               | 8 commits                                   | No PR              | `origin/security-fix`         | NET-01 vuln fix (`b7f75ba91`) + security audit reports + memory-bank docs + delete .gitmodules.                                                                                             |
-| `archive/windows-local-fixes`                | 2 commits                                   | No (archived)      | not pushed                    | Both commits obsolete. `243ef8264` ephemeral fix integrated by Jamie upstream. `5d98d2e12` ConfirmDialog targets deleted `packages/ui/`, needs re-implementation for `@spaceui/primitives`. |
-| `main`                                       | 0                                           | N/A                | `origin/main`                 | In sync with upstream/main.                                                                                                                                                                 |
+| Branch                                       | Ahead of upstream | Covered by PR? | Remote                        | Notes                                                                                                                                                                                       |
+| -------------------------------------------- | ----------------- | -------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev` \*                                     | 26 commits        | —              | —                             | Current branch. All code cumulated: 22 tags + 1 overview crash + 1 ico/svg + 3 docs.                                                                                                        |
+| `tags-and-media-fixes`                       | 22 commits        | PR #3044       | `origin/tags-and-media-fixes` | Rebased on spacedrive-data. Tags system + media context menu + FTS5 escaping + batch lookups.                                                                                               |
+| `fix/overview-crash-single-resource-seeding` | 1 commit          | PR #3048       | —                             | Rebased on spacedrive-data. Overview crash fix.                                                                                                                                             |
+| `fix/windows-ico-and-svg-gradients`          | 1 commit          | PR #3052       | —                             | Cherry-picked from spacedrive-data local. icon.ico + SVG gradients.                                                                                                                         |
+| `spacedrive-data`                            | 0 (in sync)       | N/A            | upstream                      | Reset to `upstream/spacedrive-data` on 2026-04-13. All local commits were already in PRs.                                                                                                   |
+| `security-fix`                               | 8 commits         | No PR          | `origin/security-fix`         | NET-01 vuln fix (`b7f75ba91`) + security audit reports + memory-bank docs + delete .gitmodules.                                                                                             |
+| `archive/windows-local-fixes`                | 2 commits         | No (archived)  | not pushed                    | Both commits obsolete. `243ef8264` ephemeral fix integrated by Jamie upstream. `5d98d2e12` ConfirmDialog targets deleted `packages/ui/`, needs re-implementation for `@spaceui/primitives`. |
+| `main`                                       | 0                 | N/A            | `origin/main`                 | In sync with upstream/main.                                                                                                                                                                 |
 
 ### windows-local-fixes Archive Detail (2026-04-13)
 
@@ -35,16 +35,11 @@ Both exclusive commits are obsolete:
 
 ## Untracked Files
 
-- `memory-bank/` — local docs (not committed to any branch)
-- `nul` — Windows artifact, can be deleted
+- `nul` — Windows reserved device name artifact, harmless
 
 ## Stashes
 
-6 stashes with content (rtk `--stat` misreported them as empty due to PowerShell escaping).
-
-- @{0}: `main.rs` Alt+Space shortcut graceful fail (spacebot-related)
-- @{1}-@{3}: migration mod.rs + overview formatting + memory-bank README (duplicates, content in PR #3044)
-- @{4}-@{5}: old memory-bank/activeContext.md updates
+None. All 6 stashes extracted (patches in `archive/`) and dropped on 2026-04-13.
 
 ## Not Yet in Any PR
 
