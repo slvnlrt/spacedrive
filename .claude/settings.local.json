@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(ls -la /e/spacedrive/apps/tauri/src/*.tsx /e/spacedrive/apps/tauri/src/*.ts)",
+      "Bash(cargo test:*)",
+      "Bash(git add:*)",
+      "Bash(cargo check:*)"
+    ]
+  }
+}

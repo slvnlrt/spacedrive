@@ -1,0 +1,47 @@
+
+apps/tauri/src-tauri/src/main.rs
+  @@ -1926,22 +1926,7 @@
+  -		.plugin(
+  -			tauri_plugin_global_shortcut::Builder::new()
+  -				.with_shortcut("Alt+Space")
+  -				.expect("failed to register Alt+Space global shortcut")
+  -				.with_handler(|app, _shortcut, event| {
+  -					if event.state() == ShortcutState::Pressed {
+  -						if let Err(error) = windows::toggle_voice_overlay_internal(app.clone()) {
+  -							tracing::warn!(
+  -								?error,
+  -								"Failed to toggle voice overlay from global shortcut"
+  -							);
+  -						}
+  -					}
+  -				})
+  -				.build(),
+  -		)
+  +		.plugin(tauri_plugin_global_shortcut::Builder::new().build())
+   		.invoke_handler(tauri::generate_handler![
+   			app_ready,
+   			get_daemon_socket,
+  @@ -1987,6 +1972,25 @@
+  +			// Register Alt+Space shortcut for voice overlay toggle.
+  +			// Done here instead of the plugin builder so registration
+  +			// failures (e.g. shortcut taken by another app) don't crash.
+  +			{
+  +				use tauri_plugin_global_shortcut::GlobalShortcutExt;
+  +				if let Err(error) = app.global_shortcut().on_shortcut("Alt+Space", |app, _shortcut, event| {
+  +					if event.state() == ShortcutState::Pressed {
+  +						if let Err(error) = windows::toggle_voice_overlay_internal(app.clone()) {
+  +							tracing::warn!(
+  +								?error,
+  +								"Failed to toggle voice overlay from global shortcut"
+  +							);
+  +						}
+  +					}
+  +				}) {
+  +					tracing::warn!(%error, "Alt+Space shortcut unavailable, likely registered by another application");
+  +				}
+  +			}
+  +
+   			// Setup native menu
+   			if let Err(e) = setup_menu(app.handle()) {
+   				tracing::warn!("Failed to setup menu: {}", e);
+  +20 -16

@@ -1,0 +1,106 @@
+
+core/src/infra/db/migration/mod.rs
+  @@ -38,6 +38,7 @@
+  +mod m20260125_000001_unique_user_metadata_tag;
+   
+   pub struct Migrator;
+   
+  @@ -81,6 +82,7 @@
+  +			Box::new(m20260125_000001_unique_user_metadata_tag::Migration),
+   		]
+   	}
+   }
+  +2 -0
+
+packages/interface/src/routes/overview/index.tsx
+  @@ -4,23 +4,23 @@
+  -import { useState, useMemo } from "react";
+  -import { HeroStats } from "./HeroStats";
+  -import { DevicePanel } from "./DevicePanel";
+  -import { ProjectCards } from "./ProjectCards";
+  -import { ContentBreakdown } from "./ContentBreakdown";
+  -import { OverviewTopBar } from "./OverviewTopBar";
+  -import { useNormalizedQuery } from "../../contexts/SpacedriveContext";
+   import type {
+   	Library,
+   	LocationsListOutput,
+  -	LocationsListQueryInput,
+  -} from "@sd/ts-client";
+  -import { Inspector } from "../../components/Inspector/Inspector";
+  +	LocationsListQueryInput
+  +} from '@sd/ts-client';
+  +import {useMemo, useState} from 'react';
+  +import {Inspector} from '../../components/Inspector/Inspector';
+  +import {useNormalizedQuery} from '../../contexts/SpacedriveContext';
+  +import {ContentBreakdown} from './ContentBreakdown';
+  +import {DevicePanel} from './DevicePanel';
+  +import {HeroStats} from './HeroStats';
+  +import {OverviewTopBar} from './OverviewTopBar';
+  +import {ProjectCards} from './ProjectCards';
+   
+   export function Overview() {
+   	const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
+  -		null,
+  +		null
+   	);
+   
+   	// Fetch library info with statistics using normalizedCache
+  @@ -28,21 +28,21 @@
+  -		error,
+  +		error
+   	} = useNormalizedQuery<null, Library>({
+  -		query: "libraries.info",
+  +		query: 'libraries.info',
+   		input: null,
+  -		resourceType: "library",
+  +		resourceType: 'library'
+   	});
+   
+   	// Fetch locations list to get the selected location reactively
+  -	const { data: locationsData } = useNormalizedQuery<
+  +	const {data: locationsData} = useNormalizedQuery<
+   		LocationsListQueryInput,
+   		LocationsListOutput
+   	>({
+  -		query: "locations.list",
+  +		query: 'locations.list',
+   		input: null,
+  -		resourceType: "location",
+  +		resourceType: 'location'
+   	});
+   
+   	// Find the selected location from the list reactively
+  @@ -50,7 +50,7 @@
+  -				(loc) => loc.id === selectedLocationId,
+  +				(loc) => loc.id === selectedLocationId
+   			) || null
+   		);
+   	}, [selectedLocationId, locationsData]);
+  @@ -59,9 +59,9 @@
+  -				<div className="flex flex-col h-full overflow-hidden">
+  -					<div className="flex-1 overflow-auto p-6 space-y-4">
+  -						<div className="text-center text-ink-dull">
+  +				<div className="flex h-full flex-col overflow-hidden">
+  +					<div className="flex-1 space-y-4 overflow-auto p-6">
+  +						<div className="text-ink-dull text-center">
+   							Loading library statistics...
+   						</div>
+   					</div>
+  @@ -76,10 +76,10 @@
+  -			<div className="flex flex-col h-full overflow-hidden">
+  -				<div className="flex-1 flex gap-2 overflow-hidden">
+  +			<div className="flex h-full flex-col overflow-hidden">
+  +				<div className="flex flex-1 gap-2 overflow-hidden">
+   					{/* Main content - scrollable */}
+  -					<div className="flex-1 overflow-auto p-3 space-y-4">
+  +					<div className="flex-1 space-y-4 overflow-auto p-3">
+   						{/* Hero Stats */}
+   						<HeroStats
+   							totalStorage={stats.total_capacity}
+  @@ -91,7 +91,7 @@
+  -								stats.unique_content_count,
+  +								stats.unique_content_count
+
+... (more changes truncated)
+  +25 -25
+[full diff: rtk git diff --no-compact]
